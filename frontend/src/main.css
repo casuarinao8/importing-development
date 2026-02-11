@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+ul {
+  list-style-type: disc;
+  list-style-position: inside;
+}
+
+ol {
+  list-style-type: decimal;
+  list-style-position: inside;
+}
+
+body {
+  font-family: "Satoshi";
+  background-color: #f4f5fb;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-Light.otf") format("woff");
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-LightItalic.otf") format("woff");
+  font-weight: 300;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-Medium.otf") format("woff");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-Medium.otf") format("woff");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-MediumItalic.otf") format("woff");
+  font-weight: 500;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-Bold.otf") format("woff");
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-BoldItalic.otf") format("woff");
+  font-weight: 600;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-Black.otf") format("woff");
+  font-weight: 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/src/assets/fonts/satoshi/Satoshi-BlackItalic.otf") format("woff");
+  font-weight: 900;
+  font-style: italic;
+}

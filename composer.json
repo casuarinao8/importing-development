@@ -1,0 +1,7 @@
+{
+    "name": "octopus8/volunteer-portal-v3",
+    "require": {
+        "stripe/stripe-php": "^16.5",
+        "vlucas/phpdotenv": "^5.6"
+    }
+}
