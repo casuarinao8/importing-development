@@ -89,7 +89,7 @@ export default function DataImport() {
   };
 
   const handleDownloadTemplate = () => {
-    const url = `https://drive.google.com/file/<template-link>`;
+    const url = import.meta.env.VITE_TEMPLATE_URL;
     window.open(url, '_blank');
   };
 
@@ -371,9 +371,9 @@ export default function DataImport() {
   };
 
   return (
-    <Wrapper loading={!contact} checkRolePerms={false}>
+    <Wrapper loading={!contact}>
       <div className='p-4 md:px-6 max-w-[1200px] mx-auto'>
-        <h1 className='text-2xl font-semibold align-left mb-6'>O8 Data Import</h1>
+        <h1 className='text-2xl font-semibold align-left mb-6'>{import.meta.env.VITE_IMPORT_TITLE}</h1>
         {renderStep()}
       </div>
     </Wrapper>

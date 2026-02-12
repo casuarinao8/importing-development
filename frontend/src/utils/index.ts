@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { APIContact } from '../proxy/contact/types';
 
 export namespace Utils {
   /** Indicates whether the current project is public or not */
@@ -40,26 +39,6 @@ export namespace Utils {
   export async function hasPermission(permission: string) {
     const response = await axios.get<number>(`${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/wordpress/has_permission.php?permission=${permission}`);
     return Boolean(response.data);
-  }
-
-  export function isVolunteer(contact: APIContact) {
-    const subtypes = contact['contact_sub_type:label'] ?? [];
-    return subtypes.some(type => import.meta.env.VITE_VOLUNTEER_SUBTYPES.split(',').includes(type));
-  }
-
-  export function isDonor(contact: APIContact) {
-    const subtypes = contact['contact_sub_type:label'] ?? [];
-    return subtypes.some(type => import.meta.env.VITE_DONOR_SUBTYPES.split(',').includes(type));
-  }
-
-  export function isCaregiver(contact: APIContact) {
-    const subtypes = contact['contact_sub_type:label'] ?? [];
-    return subtypes.some(type => import.meta.env.VITE_CAREGIVER_SUBTYPES.split(',').includes(type));
-  }
-
-  export function isPatient(contact: APIContact) {
-    const subtypes = contact['contact_sub_type:label'] ?? [];
-    return subtypes.some(type => import.meta.env.VITE_PATIENT_SUBTYPES.split(',').includes(type));
   }
 
   export async function encode(data: string) {

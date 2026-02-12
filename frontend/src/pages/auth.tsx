@@ -82,7 +82,7 @@ export default function Auth() {
   };
 
   return (
-    <Wrapper loading={!registration} checkRolePerms={false}>
+    <Wrapper loading={!registration}>
       <div className="p-4 md:px-6 max-w-[1200px] mx-auto">
         {registration ? (
           <>
