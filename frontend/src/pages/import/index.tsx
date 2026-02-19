@@ -94,13 +94,15 @@ export default function DataImport() {
   };
 
   const handleImport = async () => {
-    const BATCH_SIZE = import.meta.env.VITE_BATCH_SIZE;
+    const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
+    console.log('BATCH_SIZE:', BATCH_SIZE, 'env value:', import.meta.env.VITE_BATCH_SIZE);
     setLoading(true);
     setTotalContacts(contacts.length);
     setProcessedCount(0);
     setCurrentStep('progress');
-    
+
     const batches = chunkArray(contacts, BATCH_SIZE);
+    console.log('Number of batches:', batches.length, 'Total contacts:', contacts.length);
      
     const allResults = {
       newContacts: [] as any[],
@@ -114,7 +116,9 @@ export default function DataImport() {
       // const data = await Proxy.Contact.Import.processImport(contacts);
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
+        console.log(`Processing batch ${i + 1}/${batches.length} with ${batch.length} contacts`);
         const data = await Proxy.Contact.Import.processImport(batch, i+1, BATCH_SIZE);
+        console.log(`Batch ${i + 1} result:`, data);
 
         if (!data) throw new Error('Failed to process import');
 
@@ -125,7 +129,7 @@ export default function DataImport() {
         allResults.errors = [...allResults.errors, ...data.errors]; 
         
         // Update progress bar
-        const processedSoFar = (i + 1) * 50;
+        const processedSoFar = (i + 1) * BATCH_SIZE;
         setProcessedCount(Math.min(processedSoFar, contacts.length));
         
         // Small delay
@@ -169,7 +173,7 @@ export default function DataImport() {
   };
 
   const handleImportValidOnly = async () => {
-    const BATCH_SIZE = import.meta.env.VITE_BATCH_SIZE;
+    const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
     setLoading(true);
     setTotalContacts(validContacts.length);
     setProcessedCount(0);
@@ -199,7 +203,7 @@ export default function DataImport() {
         allResults.errors = [...allResults.errors, ...data.errors];
         
         // Update progress bar
-        const processedSoFar = (i + 1) * 50;
+        const processedSoFar = (i + 1) * BATCH_SIZE;
         setProcessedCount(Math.min(processedSoFar, validContacts.length));
         
         // Small delay

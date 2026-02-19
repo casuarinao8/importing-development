@@ -20,8 +20,7 @@ try {
   $batchNumber = $post['batchNumber'] ?? null;
   $batchSize = $post['batchSize'] ?? null;
 
-  // Get tax deductible financial type ID from environment
-  $taxDeductibleFinancialTypeId = getenv('TAX_DEDUCTIBLE_FINANCIAL_TYPE_ID') ?: 5;
+  $taxDeductibleFinancialTypeId = 5;
 
   error_log("Processing " . count($contacts) . " contacts");
   $newContacts = [];

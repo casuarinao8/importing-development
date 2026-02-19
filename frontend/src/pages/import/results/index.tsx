@@ -132,7 +132,7 @@ export default function Results({
               <Button 
                 variant="contained" 
                 color="primary"
-                onClick={() => {window.open(`${import.meta.env.VITE_DOMAIN}/wp-admin/admin.php?page=CiviCRM&q=civicrm%2Fsearch#/display/Latest_Imported_Donations/Latest_Imported_Donations_Table_1`, '_blank')}}
+                onClick={() => {window.open(import.meta.env.VITE_LATEST_DONATIONS_URL, '_blank')}}
               >
                 Latest Imported Donations Report
               </Button>
