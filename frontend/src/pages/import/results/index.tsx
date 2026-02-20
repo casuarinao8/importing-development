@@ -19,23 +19,21 @@ export default function Results({
   const hasSuccess = results.newContacts.length > 0 || results.updatedContacts.length > 0;
 
   const handleDownloadImportedReport = () => {
-    // Create error CSV content
     let i = 1;
-    console.log("results.newContacts", results.newContacts);
-    console.log("results.updatedContacts", results.updatedContacts);
-    console.log("results.contributions", results.contributions);
-    
+    const contributionMap: Record<number, any> = {};
+    results.contributions.forEach((c: any) => { contributionMap[c.contact_id] = c; });
+
+    const contactRow = (item: any) => {
+      const c = contributionMap[item.contact_id] ?? {};
+      return `"${i++}","${item.contact_id}","${item.label}","${item.prefix_id}","${item.name}","${item.preferred_name}","${item.contact_type}","${item.external_identifier}","${item.email_primary}","${item.phone_primary}","${item.street_address}","${item.unit_floor_number}","${item.postal_code}","${item.contribution_id ?? ''}","${c.financial_type ?? ''}","${c.total_amount ?? ''}","${c.source ?? ''}","${c.receive_date ?? ''}","${c.trxn_id ?? ''}","${c.remarks ?? ''}","${c.imported_date ?? ''}"`;
+    };
+
     const csvContent = [
       'No.,Contact ID,Type,Prefix ID,Name,Preferred Name,Contact Type,External ID,Email,Phone,Street Address,Floor & Unit number,Postal Code,Contribution ID,TDR/NTDR,Total Amount,Source,Received Date,Transaction ID,Remarks,Imported Date',
-      ...results.newContacts.map( (item, index) => 
-        `"${i++}","${item.contact_id}","${item.label}","${item.prefix_id}","${item.name}","${item.preferred_name}","${item.contact_type}","${item.external_identifier}","${item.email_primary}","${item.phone_primary}","${item.street_address}","${item.unit_floor_number}","${item.postal_code}","${item.contribution_id}","${results.contributions[index].financial_type}","${results.contributions[index].total_amount}","${results.contributions[index].source}","${results.contributions[index].receive_date}","${results.contributions[index].trxn_id}","${results.contributions[index].remarks}","${results.contributions[index].imported_date}"`
-      ),
-      ...results.updatedContacts.map( (item, index) =>
-        `"${i++}","${item.contact_id}","${item.label}","${item.prefix_id}","${item.name}","${item.preferred_name}","${item.contact_type}","${item.external_identifier}","${item.email_primary}","${item.phone_primary}","${item.street_address}","${item.unit_floor_number}","${item.postal_code}","${item.contribution_id}","${results.contributions[index].financial_type}","${results.contributions[index].total_amount}","${results.contributions[index].source}","${results.contributions[index].receive_date}","${results.contributions[index].trxn_id}","${results.contributions[index].remarks}","${results.contributions[index].imported_date}"`
-      )
+      ...results.newContacts.map(contactRow),
+      ...results.updatedContacts.map(contactRow),
     ].join('\n');
 
-    i = 0;
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -46,14 +44,13 @@ export default function Results({
   };
 
   const handleDownloadErrorReport = () => {
-    // Create error CSV content
-    console.log("results.errors", results.errors);
-    
     const csvContent = [
       'No.,Error Message,Name,Contact Type,External ID,Email,Phone,Street Address,Floor and Unit number,Postal Code,Financial Type,Financial Type Code,Donation Status Code,Total Amount,Donation Source,Campaign Code,Donation Date,Payment Method Code,Cheque Number,Transaction ID,Platform Code,Recurring Donation Code,Remarks,Imported Date',
-      ...results.errors.map((item, index) => 
-        `"${index + 1}","${item.errors.message}","${item.contact.name}","${item.contact.contact_type}","${item.contact.external_identifier}","${item.contact.email_primary}","${item.contact.phone_primary}","${item.contact.street_address}","${item.contact.unit_floor_number}","${item.contact.postal_code}","${item.contact.contribution.financial_type}","${item.contact.contribution.financial_type_id}","${item.contact.contribution.contribution_status_id}","${item.contact.contribution.total_amount}","${item.contact.contribution.source}","${item.contact.contribution['Additional_Contribution_Details.Campaign']}","${item.contact.contribution.receive_date}","${item.contact.contribution.payment_instrument_id}","${item.contact.contribution.check_number}","${item.contact.contribution.trxn_id}","${item.contact.contribution['Additional_Contribution_Details.Payment_Platform']}","${item.contact.contribution['Additional_Contribution_Details.Recurring_Donation']}","${item.contact.contribution['Additional_Contribution_Details.Remarks']}","${item.contact.contribution['Additional_Contribution_Details.Imported_Date']}"`
-      )
+      ...results.errors.map((item, index) => {
+        const contact = item.contact ?? {};
+        const contrib = contact.contribution ?? {};
+        return `"${index + 1}","${item.message ?? ''}","${contact.name ?? ''}","${contact.contact_type ?? ''}","${contact.external_identifier ?? ''}","${contact.email_primary ?? ''}","${contact.phone_primary ?? ''}","${contact.street_address ?? ''}","${contact.unit_floor_number ?? ''}","${contact.postal_code ?? ''}","${contrib.financial_type ?? ''}","${contrib.financial_type_id ?? ''}","${contrib.contribution_status_id ?? ''}","${contrib.total_amount ?? ''}","${contrib.source ?? ''}","${contrib['Additional_Contribution_Details.Campaign'] ?? ''}","${contrib.receive_date ?? ''}","${contrib.payment_instrument_id ?? ''}","${contrib.check_number ?? ''}","${contrib.trxn_id ?? ''}","${contrib['Additional_Contribution_Details.Payment_Platform'] ?? ''}","${contrib['Additional_Contribution_Details.Recurring_Donation'] ?? ''}","${contrib['Additional_Contribution_Details.Remarks'] ?? ''}","${contrib['Additional_Contribution_Details.Imported_Date'] ?? ''}"`;
+      })
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' })

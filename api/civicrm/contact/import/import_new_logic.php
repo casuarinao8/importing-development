@@ -1,4 +1,6 @@
 <?php
+set_time_limit(300); // 5 minutes - CiviCRM hooks (CiviRules, emails, contridivide) are slow per contribution
+
 require_once '../../../../../wp-load.php';
 require_once '../../../../../wp-content/plugins/civicrm/civicrm/civicrm.config.php';
 
@@ -22,7 +24,7 @@ try {
 
   $taxDeductibleFinancialTypeId = 5;
 
-  error_log("Processing " . count($contacts) . " contacts");
+  error_log("[IMPORTING] Processing " . count($contacts) . " contacts");
   $newContacts = [];
   $updatedContacts = [];
   $errors = [];
@@ -57,6 +59,8 @@ try {
   $externalIds = array_unique($externalIds);
   $emails = array_unique($emails);
   $phones = array_unique($phones);
+
+  error_log("[IMPORTING] Identifiers to look up - External IDs: " . count($externalIds) . ", Emails: " . count($emails) . ", Phones: " . count($phones));
 
   // Fetch existing contacts based on collected identifiers
   // Single query combining external_id, email, and phone matching
@@ -135,6 +139,8 @@ try {
     }
   }
 
+  error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext/email/phone)");
+
   // Function to find existing contact based on matching rules
   function findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId)
   {
@@ -184,6 +190,7 @@ try {
       if ($existingContact) {
         // UPDATE EXISTING CONTACT
         $contactId = $existingContact['id'];
+        error_log("[IMPORTING] Row " . ($index + 1) . ": Updating existing contact ID " . $contactId . " - " . $contact['name'] . " (ext_id: " . ($contact['external_identifier'] ?? 'none') . ")");
 
         $query = \Civi\Api4\Contact::update(false)
           ->addWhere('id', '=', $contactId)
@@ -193,7 +200,7 @@ try {
         $name = $contact['name'];
         if ($contact['contact_type'] === 'Organization') {
           $query->addValue('organization_name', $name)
-            ->addValue('contact_sub_type', ['Organisation_Donor',]);
+            ->addValue('contact_sub_type', ['Organisation_donor',]);
         } else {
           $query->addValue('first_name', $name)
             ->addValue('contact_sub_type', ['Individual_Donor',]);
@@ -260,6 +267,7 @@ try {
 
       } else {
         // CREATE NEW CONTACT
+        error_log("[IMPORTING] Row " . ($index + 1) . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
         $query = \Civi\Api4\Contact::create(false)
           ->addValue('contact_type', $contact['contact_type']);
 
@@ -267,7 +275,7 @@ try {
         $name = $contact['name'];
         if ($contact['contact_type'] === 'Organization') {
           $query->addValue('organization_name', $name)
-            ->addValue('contact_sub_type', ['Organisation_Donor',]);
+            ->addValue('contact_sub_type', ['Organisation_donor',]);
         } else {
           $query->addValue('first_name', $name)
             ->addValue('contact_sub_type', ['Individual_Donor',]);
@@ -310,6 +318,7 @@ try {
 
         $result = $query->execute();
         $contactId = $result[0]['id'];
+        error_log("[IMPORTING] Row " . ($index + 1) . ": New contact created with ID " . $contactId);
 
         $newContacts[] = buildContactResponse($contactId, $contact, $index, 'New');
         $contactSuccess = true;
@@ -335,6 +344,7 @@ try {
 
       // Collect contribution data for bulk save ONLY if contact was successfully created/updated
       if ($contactSuccess && $contribution && $contactId) {
+        error_log("[IMPORTING] Row " . ($index + 1) . ": Queuing contribution - Amount: " . $contribution['total_amount'] . ", trxn_id: " . ($contribution['trxn_id'] ?? 'none') . ", date: " . $contribution['receive_date']);
         $contributionRecords[] = [
           'contact_id' => $contactId,
           'total_amount' => $contribution['total_amount'],
@@ -371,7 +381,8 @@ try {
         ];
       }
 
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
+      error_log("[IMPORTING] Row " . ($index + 1) . ": Contact failed (" . get_class($e) . "): " . $e->getMessage());
       // Build full contact response
       $contactResponse = buildContactResponse(null, $contact, $index, 'Error');
 
@@ -405,7 +416,7 @@ try {
         'field' => 'general',
         'message' => 'Contact Import failed at row ' . ($index + 2) . ': ' . $e->getMessage() . '. Contribution is not imported for this contact.'
       ];
-      error_log("Contact Import failed at row " . ($index + 2) . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
+      error_log("[IMPORTING] Contact Import failed at row " . ($index + 2) . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
       $contactSuccess = false;
       continue;
     }
@@ -416,6 +427,7 @@ try {
 
   if (!empty($contributionRecords)) {
     try {
+      error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
       $contributionResults = \Civi\Api4\Contribution::save(false)
         ->setRecords($contributionRecords)
         ->execute();
@@ -423,6 +435,7 @@ try {
       foreach ($contributionResults as $idx => $contributionResult) {
         $contactId = $contactContributionMap[$idx]['contact_id'];
         $contributionId = $contributionResult['id'];
+        error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
 
         $importedContributions[] = [
           'contribution_id' => $contributionId,
@@ -459,9 +472,9 @@ try {
         unset($uc);
       }
 
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
       $errorMessage = $e->getMessage();
-      error_log("Bulk contribution save failed: " . $errorMessage);
+      error_log("[IMPORTING] Bulk contribution save failed (" . get_class($e) . "): " . $errorMessage);
 
       $actualBatchSize = count($contacts);
       $minRow = $batchNumber ? (($batchNumber - 1) * $batchSize) + 1 : null;
@@ -484,7 +497,7 @@ try {
     }
   }
 
-  error_log("Import completed - New: " . count($newContacts) . ", Updated: " . count($updatedContacts) . ", Contributions: " . count($importedContributions) . ", Errors: " . count($errors));
+  error_log("[IMPORTING] Import completed - New: " . count($newContacts) . ", Updated: " . count($updatedContacts) . ", Contributions: " . count($importedContributions) . ", Errors: " . count($errors));
 
   $response = [
     'newContacts' => $newContacts,
@@ -496,10 +509,10 @@ try {
 
   echo json_encode($response);
 
-} catch (Exception $e) {
+} catch (\Throwable $e) {
   http_response_code(400);
   echo json_encode(['error' => $e->getMessage()]);
-  error_log("Error: " . $e->getMessage());
+  error_log("[IMPORTING] Fatal error (" . get_class($e) . "): " . $e->getMessage());
 }
 
 function buildContactResponse($contactId, $contact, $index, $label)

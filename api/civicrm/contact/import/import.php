@@ -20,14 +20,15 @@
     $batchNumber = $post['batchNumber'] ?? null;
     $batchSize = $post['batchSize'] ?? null;
     
-    error_log("Processing " . count($contacts) . " contacts");
+    error_log("[IMPORTING] Processing " . count($contacts) . " contacts");
     $newContacts = [];
     $updatedContacts = [];
     $errors = [];
 
     // Batch fetch all existing contacts by external_identifier
     $externalIds = array_filter(array_column($contacts, 'external_identifier'));
-    
+    error_log("[IMPORTING] Looking up " . count($externalIds) . " external IDs in DB");
+
     $existingContactsMap = [];
     if (!empty($externalIds)) {
       $existingContactsResult = \Civi\Api4\Contact::get(false)
@@ -51,6 +52,8 @@
       }
     }
 
+    error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contacts in DB");
+
     // Create/Update contacts and collect id for bulk contribution creation
     $contributionRecords = [];
     $contactContributionMap = []; // Maps array index to contact data for later reference
@@ -60,12 +63,13 @@
       $contribution = $contact['contribution'] ?? null;
       
       try {
-        $existingContact = $existingContactsMap[$contact['external_identifier']] ?? null; 
+        $existingContact = $existingContactsMap[$contact['external_identifier']] ?? null;
         $contactId = null;
-        
-        if ($existingContact) { 
+
+        if ($existingContact) {
           // UPDATE EXISTING CONTACT
           $contactId = $existingContact['id'];
+          error_log("[IMPORTING] Row " . ($index + 1) . ": Updating existing contact ID " . $contactId . " - " . $contact['name'] . " (ext_id: " . ($contact['external_identifier'] ?? 'none') . ")");
           
           $query = \Civi\Api4\Contact::update(false)
             ->addWhere('id', '=', $contactId)
@@ -141,6 +145,7 @@
 
         } else {
           // CREATE NEW CONTACT
+          error_log("[IMPORTING] Row " . ($index + 1) . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
           $query = \Civi\Api4\Contact::create(false)
             ->addValue('contact_type', $contact['contact_type']);
 
@@ -192,7 +197,8 @@
 
           $result = $query->execute();
           $contactId = $result[0]['id'];
-          
+          error_log("[IMPORTING] Row " . ($index + 1) . ": New contact created with ID " . $contactId);
+
           $newContacts[] = buildContactResponse($contactId, $contact, $index, 'New');
           $contactSuccess = true;
 
@@ -208,6 +214,7 @@
 
         // Collect contribution data for bulk save ONLY if contact was successfully created/updated
         if ($contactSuccess && $contribution && $contactId) {
+          error_log("[IMPORTING] Row " . ($index + 1) . ": Queuing contribution - Amount: " . $contribution['total_amount'] . ", trxn_id: " . ($contribution['trxn_id'] ?? 'none') . ", date: " . $contribution['receive_date']);
           $contributionRecords[] = [
             'contact_id' => $contactId,
             'total_amount' => $contribution['total_amount'],
@@ -244,7 +251,7 @@
           'field' => 'general',
           'message' => 'Contact Import failed: ' . $e->getMessage()
         ];
-        error_log("Contact Import failed: " . $e->getMessage());
+        error_log("[IMPORTING] Contact Import failed: " . $e->getMessage());
         $contactSuccess = false;
         // Don't collect contribution data if contact failed
         continue;
@@ -257,15 +264,16 @@
     if ($contactSuccess && !empty($contributionRecords)) {
       try {
         // bulk save
+        error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
         $contributionResults = \Civi\Api4\Contribution::save(false)
           ->setRecords($contributionRecords)
           ->execute();
-        
+
         // if bulk save is successful - map all contribution IDs and track contributions
         foreach ($contributionResults as $idx => $contributionResult) {
           $contactId = $contactContributionMap[$idx]['contact_id'];
           $contributionId = $contributionResult['id'];
-          error_log('contributionResult: ' . $contributionResult);
+          error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
           
           // Track imported contribution
           $importedContributions[] = [
@@ -299,7 +307,7 @@
       } catch (Exception $e) {
         // Bulk save failed - determine row range and report error
         $errorMessage = $e->getMessage();
-        error_log("Bulk contribution save failed: " . $errorMessage);
+        error_log("[IMPORTING] Bulk contribution save failed: " . $errorMessage);
         
         // Get row range from the batch
         $actualBatchSize = count($contacts);
@@ -326,11 +334,11 @@
           'field' => 'contribution',
           'message' => "Contribution import failed for $rowRange. Error: $errorMessage"
         ];
-        error_log("Contribution failed for $rowRange: " . $e->getMessage());
+        error_log("[IMPORTING] Contribution failed for $rowRange: " . $e->getMessage());
       }
     }
 
-    error_log("Import completed - New: " . count($newContacts) . ", Updated: " . count($updatedContacts) . ", Contributions: " . count($importedContributions) . ", Errors: " . count($errors));
+    error_log("[IMPORTING] Import completed - New: " . count($newContacts) . ", Updated: " . count($updatedContacts) . ", Contributions: " . count($importedContributions) . ", Errors: " . count($errors));
 
     // Restructure response for UI display
     $response = [
@@ -346,7 +354,7 @@
   } catch (Exception $e) {
     http_response_code(400);
     echo json_encode(['error' => $e->getMessage()]);
-    error_log("This is a debug message from PHP");
+    error_log("[IMPORTING] This is a debug message from PHP");
   }
 
   // Helper function to reduce duplication
