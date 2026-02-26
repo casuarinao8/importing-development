@@ -33,7 +33,10 @@ export default class ImportManager {
 	}
 
   static async getDuplicateTransactionIds(transactionIds: string[]) {
-		const response = await axios.get<{ id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]>(`${this.route}/get_duplicate_transaction_ids.php?transactionIds=${transactionIds}`);
+		const response = await axios.post<{ id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]>(
+			`${this.route}/get_duplicate_transaction_ids.php`,
+			{ transactionIds }
+		);
 		return response.data;
 	}
 
