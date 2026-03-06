@@ -23,6 +23,7 @@ try {
   $batchSize = $post['batchSize'] ?? null;
 
   $taxDeductibleFinancialTypeId = 5;
+  $orgSubtype = resolveContactSubtype('Organization', ['Organisation_Donor', 'Organisation_donor']);
 
   error_log("[IMPORTING] Processing " . count($contacts) . " contacts");
   $newContacts = [];
@@ -200,7 +201,7 @@ try {
         $name = $contact['name'];
         if ($contact['contact_type'] === 'Organization') {
           $query->addValue('organization_name', $name)
-            ->addValue('contact_sub_type', ['Organisation_donor',]);
+            ->addValue('contact_sub_type', [$orgSubtype,]);
         } else {
           $query->addValue('first_name', $name)
             ->addValue('contact_sub_type', ['Individual_Donor',]);
@@ -275,7 +276,7 @@ try {
         $name = $contact['name'];
         if ($contact['contact_type'] === 'Organization') {
           $query->addValue('organization_name', $name)
-            ->addValue('contact_sub_type', ['Organisation_donor',]);
+            ->addValue('contact_sub_type', [$orgSubtype,]);
         } else {
           $query->addValue('first_name', $name)
             ->addValue('contact_sub_type', ['Individual_Donor',]);
@@ -358,9 +359,12 @@ try {
           'Additional_Contribution_Details.NRIC_FIN_UEN' => $contribution['Additional_Contribution_Details.NRIC_FIN_UEN'],
           'Additional_Contribution_Details.Campaign' => $contribution['Additional_Contribution_Details.Campaign'],
           'Additional_Contribution_Details.Imported_Date' => $contribution['Additional_Contribution_Details.Imported_Date'],
+          'Additional_Contribution_Details.Received_Date' => $contribution['Additional_Contribution_Details.Received_Date'],
           'Additional_Contribution_Details.Payment_Platform' => $contribution['Additional_Contribution_Details.Payment_Platform'],
           'Additional_Contribution_Details.Recurring_Donation' => $contribution['Additional_Contribution_Details.Recurring_Donation'],
-          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks']
+          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'],
+          'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? '',
+          'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? null
         ];
 
         // Store reference for mapping contribution IDs back later
@@ -377,7 +381,8 @@ try {
           'platform' => $contribution['Additional_Contribution_Details.Payment_Platform'],
           'frequency' => $contribution['Additional_Contribution_Details.Recurring_Donation'],
           'remarks' => $contribution['Additional_Contribution_Details.Remarks'],
-          'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date']
+          'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date'],
+          'received_date' => $contribution['Additional_Contribution_Details.Received_Date']
         ];
       }
 
@@ -402,9 +407,12 @@ try {
           'Additional_Contribution_Details.NRIC_FIN_UEN' => $contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] ?? "",
           'Additional_Contribution_Details.Campaign' => $contribution['Additional_Contribution_Details.Campaign'] ?? "",
           'Additional_Contribution_Details.Imported_Date' => $contribution['Additional_Contribution_Details.Imported_Date'] ?? "",
+          'Additional_Contribution_Details.Received_Date' => $contribution['Additional_Contribution_Details.Received_Date'] ?? "",
           'Additional_Contribution_Details.Payment_Platform' => $contribution['Additional_Contribution_Details.Payment_Platform'] ?? "",
           'Additional_Contribution_Details.Recurring_Donation' => $contribution['Additional_Contribution_Details.Recurring_Donation'] ?? "",
-          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'] ?? ""
+          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'] ?? "",
+          'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? "",
+          'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? ""
         ];
       }
 
@@ -451,7 +459,8 @@ try {
           'platform' => $contactContributionMap[$idx]['platform'],
           'frequency' => $contactContributionMap[$idx]['frequency'],
           'remarks' => $contactContributionMap[$idx]['remarks'],
-          'imported_date' => $contactContributionMap[$idx]['imported_date']
+          'imported_date' => $contactContributionMap[$idx]['imported_date'],
+          'received_date' => $contactContributionMap[$idx]['received_date']
         ];
 
         // Link contribution to contact records
@@ -515,6 +524,32 @@ try {
   error_log("[IMPORTING] Fatal error (" . get_class($e) . "): " . $e->getMessage());
 }
 
+
+function resolveContactSubtype($contactType, array $candidates)
+{
+  try {
+    $subTypes = CRM_Core_PseudoConstant::contactSubTypes($contactType);
+  } catch (\Throwable $e) {
+    return $candidates[0];
+  }
+  if (empty($subTypes)) {
+    return $candidates[0];
+  }
+  $lookup = [];
+  foreach (array_keys($subTypes) as $name) {
+    $lower = strtolower($name);
+    if (!isset($lookup[$lower])) {
+      $lookup[$lower] = $name;
+    }
+  }
+  foreach ($candidates as $candidate) {
+    $lower = strtolower($candidate);
+    if (isset($lookup[$lower])) {
+      return $lookup[$lower];
+    }
+  }
+  return $candidates[0];
+}
 function buildContactResponse($contactId, $contact, $index, $label)
 {
   return [

@@ -35,6 +35,9 @@ export interface Contribution {
   "Additional_Contribution_Details.Recurring_Donation": number | null;
   "Additional_Contribution_Details.Remarks": string;
   "Additional_Contribution_Details.Imported_Date": string;
+  "Additional_Contribution_Details.Received_Date": string;
+  "Donation_In_Kind_Additional_Details.Items_donated": string;
+  "Donation_In_Kind_Additional_Details.Quantity": number | null;
 }
 
 export interface ValidationError {

@@ -249,6 +249,10 @@ export default function DataImport() {
   };
 
   const handleDownloadReview = () => {
+    const hasDisbursementDate = invalidContacts.some(
+      item => item.contact.contribution['Additional_Contribution_Details.Received_Date']
+    );
+
     // Create error CSV content
     const data = invalidContacts.map((item, index) => ({
       'No.': index + 1,
@@ -275,7 +279,12 @@ export default function DataImport() {
       'Platform Code': item.contact.contribution['Additional_Contribution_Details.Payment_Platform'],
       'Recurring Donation Code': item.contact.contribution['Additional_Contribution_Details.Recurring_Donation'],
       'Remarks': item.contact.contribution['Additional_Contribution_Details.Remarks'],
+      'Items Donated (for DIK)': item.contact.contribution['Donation_In_Kind_Additional_Details.Items_donated'],
+      'Quantity': item.contact.contribution['Donation_In_Kind_Additional_Details.Quantity'],
       'Imported Date': item.contact.contribution['Additional_Contribution_Details.Imported_Date'],
+      ...(hasDisbursementDate && {
+        'Disbursement Batch Date': item.contact.contribution['Additional_Contribution_Details.Received_Date'],
+      }),
     }));
   
     const csv = Papa.unparse(data, {

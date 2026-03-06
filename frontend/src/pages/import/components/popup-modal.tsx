@@ -36,6 +36,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
     { label: 'Frequency Code', key: 'Additional_Contribution_Details.Recurring_Donation' },
     { label: 'Remarks', key: 'Additional_Contribution_Details.Remarks' },
     { label: 'Imported Date', key: 'Additional_Contribution_Details.Imported_Date' },
+    { label: 'Disbursement Batch Date', key: 'Additional_Contribution_Details.Received_Date' },
   ];
 
   const formatCellValue = (value: any): string => {
@@ -47,16 +48,37 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
 
   if (!popUpContent) return null;
 
+  // Check if any record has a disbursement batch date value
+  const hasDisbursementDate = (() => {
+    if (popUpContent.type === 'valid' || popUpContent.type === 'total') {
+      const contacts = popUpContent.data as ImportContact[];
+      return contacts.some(c => c.contribution?.['Additional_Contribution_Details.Received_Date']);
+    }
+    if (popUpContent.type === 'invalid') {
+      const items = popUpContent.data as Array<{ contact: ImportContact }>;
+      return items.some(item => item.contact.contribution?.['Additional_Contribution_Details.Received_Date']);
+    }
+    if (popUpContent.type === 'contributions') {
+      const contributions = popUpContent.data as any[];
+      return contributions.some(c => c.received_date);
+    }
+    return false;
+  })();
+
+  const filteredHeaders = hasDisbursementDate
+    ? commonHeaders
+    : commonHeaders.filter(h => h.key !== 'Additional_Contribution_Details.Received_Date');
+
   const renderValidRecordsTable = () => {
     const contacts = popUpContent.data as ImportContact[];
-    
+
     return (
       <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
         <Table stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>No.</TableCell>
-              {commonHeaders.map((header) => (
+              {filteredHeaders.map((header) => (
                 <TableCell key={header.key}><strong>{header.label}</strong></TableCell>
               ))}
             </TableRow>
@@ -67,8 +89,10 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
                 <TableCell>{index + 1}</TableCell>
                 {Object.entries(contact).map(([field, value], index) => (
                   field !== 'contribution' ? <TableCell key={index}>{value ?? ''}</TableCell> : null
-                ))}         
-                {contact.contribution && Object.entries(contact.contribution).map(([, value], index) => (
+                ))}
+                {contact.contribution && Object.entries(contact.contribution)
+                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
+                  .map(([, value], index) => (
                   <TableCell key={index}>{value ?? ''}</TableCell>
                 ))}
                 </TableRow>
@@ -80,13 +104,13 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
   };
 
   const renderInvalidRecordsTable = () => {
-    const invalidContacts = popUpContent.data as Array<{ 
+    const invalidContacts = popUpContent.data as Array<{
       contact: ImportContact;
-      errors: Array<{ field: string; message: string }> 
+      errors: Array<{ field: string; message: string }>
     }>;
     console.log("invalidContacts", invalidContacts);
-    
-    
+
+
     return (
       <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
         <Table stickyHeader>
@@ -94,7 +118,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
             <TableRow>
               <TableCell>No.</TableCell>
               <TableCell>Errors</TableCell>
-              {commonHeaders.map((header) => (
+              {filteredHeaders.map((header) => (
                 <TableCell key={header.key}><strong>{header.label}</strong></TableCell>
               ))}
             </TableRow>
@@ -110,8 +134,10 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
                 </TableCell>
                 {Object.entries(item.contact).map(([field, value], index) => (
                   field !== 'contribution' ? <TableCell key={index}>{formatCellValue(value)}</TableCell> : null
-                ))}         
-                {Object.entries(item.contact.contribution).map(([, value], index) => (
+                ))}
+                {Object.entries(item.contact.contribution)
+                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
+                  .map(([, value], index) => (
                   <TableCell key={index}>{formatCellValue(value)}</TableCell>
                 ))}
               </TableRow>
@@ -124,14 +150,14 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
 
   const renderTotalRecordsTable = () => {
     const contacts = popUpContent.data as ImportContact[];
-    
+
     return (
       <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
         <Table stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>No.</TableCell>
-              {commonHeaders.map((header) => (
+              {filteredHeaders.map((header) => (
                 <TableCell key={header.key}><strong>{header.label}</strong></TableCell>
               ))}
             </TableRow>
@@ -142,10 +168,12 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
                 <TableCell>{index + 1}</TableCell>
                 {Object.entries(contact).map(([field, value], index) => (
                   field !== 'contribution' ? <TableCell key={index}>{value ?? ''}</TableCell> : null
-                ))}         
-                {contact.contribution && Object.entries(contact.contribution).map(([, value], index) => (
+                ))}
+                {contact.contribution && Object.entries(contact.contribution)
+                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
+                  .map(([, value], index) => (
                   <TableCell key={index}>{value ?? ''}</TableCell>
-                ))}  
+                ))}
               </TableRow>
             ))}
           </TableBody>
@@ -216,6 +244,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
               <TableCell><strong>Frequency</strong></TableCell>
               <TableCell><strong>Remarks</strong></TableCell>
               <TableCell><strong>Imported Date</strong></TableCell>
+              {hasDisbursementDate && <TableCell><strong>Disbursement Batch Date</strong></TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -234,6 +263,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
                 <TableCell>{contribution.frequency}</TableCell>
                 <TableCell>{contribution.remarks}</TableCell>
                 <TableCell>{contribution.imported_date}</TableCell>
+                {hasDisbursementDate && <TableCell>{contribution.received_date ?? ''}</TableCell>}
               </TableRow>
             ))}
           </TableBody>

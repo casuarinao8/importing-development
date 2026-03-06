@@ -34,13 +34,13 @@ export class ContactValidator {
 
     // Contribution Required field validations
     // Amount
-    if(!contribution.total_amount) {
+    if (!contribution.total_amount) {
       errors.push({
         row: rowIndex,
         field: 'total_amount',
         message: 'Amount is required'
       });
-    } else if(isNaN(contribution.total_amount)) {
+    } else if (isNaN(contribution.total_amount)) {
       errors.push({
         row: rowIndex,
         field: 'total_amount',
@@ -59,8 +59,8 @@ export class ContactValidator {
       errors.push({
         row: rowIndex,
         field: 'financial_type',
-        message: 'Financial type code is required' 
-      });         
+        message: 'Financial type code is required'
+      });
     }
 
     // Contribution Date
@@ -68,16 +68,16 @@ export class ContactValidator {
       errors.push({
         row: rowIndex,
         field: 'receive_date',
-        message: 'Contribution date is required' 
-      });         
+        message: 'Contribution date is required'
+      });
     } else {
       let dateValue = this.convertToISO(contribution.receive_date);
       if (dateValue === '') {
         errors.push({
           row: rowIndex,
           field: 'receive_date',
-          message: 'Contribution date format is invalid' 
-        }); 
+          message: 'Contribution date format is invalid'
+        });
       } else contribution.receive_date = dateValue;
     }
 
@@ -86,8 +86,8 @@ export class ContactValidator {
       errors.push({
         row: rowIndex,
         field: 'contribution_status',
-        message: 'Contribution status is required' 
-      });         
+        message: 'Contribution status is required'
+      });
     }
 
     // Payment Method
@@ -95,25 +95,25 @@ export class ContactValidator {
       errors.push({
         row: rowIndex,
         field: 'payment_instrument',
-        message: 'Payment method code is not a number' 
-      });         
+        message: 'Payment method code is not a number'
+      });
     } else if (!contribution.payment_instrument_id || contribution.payment_instrument_id === 0) {
       errors.push({
         row: rowIndex,
         field: 'payment_instrument',
-        message: 'Payment method code is required' 
-      });         
+        message: 'Payment method code is required'
+      });
     }
 
     // Check for duplicate transaction ID
     if (contribution.trxn_id) {
       const duplicateTransactionId = existingTransactionIds.find(item => item.trxn_id === contribution.trxn_id);
-        if (duplicateTransactionId) {
-          errors.push({
-            row: rowIndex,
-            field: 'trxn_id',
-            message: 'Row ' + (rowIndex + 1) + ': Transaction ID already exists at Donation ID: ' + duplicateTransactionId.id
-        });         
+      if (duplicateTransactionId) {
+        errors.push({
+          row: rowIndex,
+          field: 'trxn_id',
+          message: 'Row ' + (rowIndex + 1) + ': Transaction ID already exists at Donation ID: ' + duplicateTransactionId.id
+        });
       }
     }
 
@@ -124,8 +124,8 @@ export class ContactValidator {
         errors.push({
           row: rowIndex,
           field: 'platform',
-          message: 'Platform code is not a number' 
-        });         
+          message: 'Platform code is not a number'
+        });
       }
     }
 
@@ -136,8 +136,8 @@ export class ContactValidator {
         errors.push({
           row: rowIndex,
           field: 'frequency',
-          message: 'Frequency code is not a number' 
-        });         
+          message: 'Frequency code is not a number'
+        });
       }
     }
 
@@ -147,17 +147,30 @@ export class ContactValidator {
       errors.push({
         row: rowIndex,
         field: 'imported_date',
-        message: 'Imported date is required' 
-      });         
+        message: 'Imported date is required'
+      });
     } else {
       let dateValue = this.convertToISO(imported_date);
       if (dateValue === '') {
         errors.push({
           row: rowIndex,
           field: 'imported_date',
-          message: 'Imported date format is invalid' 
-        }); 
+          message: 'Imported date format is invalid'
+        });
       } else contribution["Additional_Contribution_Details.Imported_Date"] = dateValue;
+    }
+
+    // Change Disbursement Batch Date format
+    let received_date = contribution["Additional_Contribution_Details.Received_Date"];
+    if (received_date) {
+      let dateValue = this.convertToISO(received_date);
+      if (dateValue === '') {
+        errors.push({
+          row: rowIndex,
+          field: 'received_date',
+          message: 'Disbursement batch date format is invalid'
+        });
+      } else contribution["Additional_Contribution_Details.Received_Date"] = dateValue;
     }
 
     return {
@@ -205,7 +218,7 @@ export class ContactValidator {
 
   private static isValidEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    
+
     return email !== '' ? emailRegex.test(email) : true;
   }
 
@@ -213,7 +226,7 @@ export class ContactValidator {
     // dd/mm/yyyy with optional time (HH:MM AM/PM)
     const match = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+\d{1,2}:\d{2}\s+(?:AM|PM))?$/i.exec(dateStr.trim());
     if (!match) return ''; // invalid format
-  
+
     const [_, dd, mm, yyyy] = match;
     return `${yyyy}-${mm}-${dd}`;
   }
@@ -267,7 +280,10 @@ export class ContactValidator {
           "Additional_Contribution_Details.Payment_Platform": null,
           "Additional_Contribution_Details.Recurring_Donation": null,
           "Additional_Contribution_Details.Remarks": '',
-          "Additional_Contribution_Details.Imported_Date": ''
+          "Additional_Contribution_Details.Imported_Date": '',
+          "Additional_Contribution_Details.Received_Date": '',
+          "Donation_In_Kind_Additional_Details.Items_donated": '',
+          "Donation_In_Kind_Additional_Details.Quantity": null
         }
       };
 
@@ -351,7 +367,7 @@ export class ContactValidator {
           case 'date received*':
           case 'date received':
           case 'date_received':
-          case 'donation date':
+          case 'donation date*':
             contact.contribution.receive_date = value;
             break;
           case 'payment method code':
@@ -376,7 +392,7 @@ export class ContactValidator {
             break;
           case 'campaign code':
           case 'campaign_code':
-              contact.contribution["Additional_Contribution_Details.Campaign"] = value;
+            contact.contribution["Additional_Contribution_Details.Campaign"] = value;
             break;
           case 'donation platform code':
           case 'donation_platform_code':
@@ -386,11 +402,15 @@ export class ContactValidator {
             } else {
               contact.contribution["Additional_Contribution_Details.Payment_Platform"] = null;
             }
-            break;            
+            break;
           case 'imported date':
           case 'imported_date':
             contact.contribution["Additional_Contribution_Details.Imported_Date"] = value;
-            break;  
+            break;
+          case 'disbursement batch date':
+          case 'disbursement_batch_date':
+            contact.contribution["Additional_Contribution_Details.Received_Date"] = value;
+            break;
           case 'frequency code':
           case 'recurring donation':
             if (value) {
@@ -399,10 +419,23 @@ export class ContactValidator {
             } else {
               contact.contribution["Additional_Contribution_Details.Recurring_Donation"] = null;
             }
-            break; 
+            break;
           case 'remarks':
             contact.contribution["Additional_Contribution_Details.Remarks"] = value;
-            break; 
+            break;
+          case 'items donated (for dik)':
+          case 'items donated':
+          case 'items_donated':
+            contact.contribution["Donation_In_Kind_Additional_Details.Items_donated"] = value;
+            break;
+          case 'quantity':
+            if (value) {
+              const converted = this.safeToNumberOrNull(value);
+              (contact.contribution as any)["Donation_In_Kind_Additional_Details.Quantity"] = converted;
+            } else {
+              contact.contribution["Donation_In_Kind_Additional_Details.Quantity"] = null;
+            }
+            break;
         }
       });
 
@@ -419,7 +452,7 @@ export class ContactValidator {
 
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
-      
+
       if (char === '"') {
         inQuotes = !inQuotes;
       } else if (char === ',' && !inQuotes) {
@@ -429,7 +462,7 @@ export class ContactValidator {
         current += char;
       }
     }
-    
+
     result.push(current);
     return result;
   }

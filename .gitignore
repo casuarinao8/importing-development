@@ -1,6 +1,7 @@
 .env
 /public
 index.php
+index.html
 
 # Logs
 logs
