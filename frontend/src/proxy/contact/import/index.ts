@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { ImportContact, ImportResults, ValidationError, APIImportSettings, APISettings } from './types';
+import { config } from '../../../utils/config';
 
 export default class ImportManager {
-  private static route = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact/import`;
+  private static route = `${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact/import`;
 
   static async processImport(contacts?: ImportContact[], batchNumber?: number, batchSize?: number) {
 

@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { APICustomField, APIOptionValue } from './types';
+import { config } from '../../utils/config';
 
 export class CustomFieldsManager {
-  private static route = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/custom-field`;
+  private static route = `${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/custom-field`;
 
   /** Return an array of fields belonging to a field set */
   static async getFieldsBySetName(name: string) {

@@ -2,6 +2,7 @@
 /public
 index.php
 index.html
+config.js
 
 # Logs
 logs

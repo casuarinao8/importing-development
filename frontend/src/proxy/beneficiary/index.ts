@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { APIJobRequest, CreateJobRequest } from './types';
+import { config } from '../../utils/config';
 
 export default class BeneficiaryManager {
-  private static route = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/beneficiary`;
+  private static route = `${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/beneficiary`;
 
   /**
    * @param patient_view Whether to return every job request for the patient, caregiver by default

@@ -3,6 +3,7 @@ import { CheckCircle, Error, ArrowBack } from '@mui/icons-material';
 import TotalRecordsCard from '../components/total-records-card';
 import ImportSummaryComponent from '../components/import-summary';
 import { ImportSummary, ImportResults } from '../../../proxy/contact/import/types';
+import { config } from '../../../utils/config';
 
 interface ResultsProps {
   summary: ImportSummary;
@@ -66,7 +67,7 @@ export default function Results({
           <Button 
             variant="contained" 
             color="primary"
-            onClick={() => {window.open(import.meta.env.VITE_LATEST_DONATIONS_URL, '_blank')}}
+            onClick={() => {window.open(config.LATEST_DONATIONS_URL, '_blank')}}
           >
             Latest Imported Donations Report
           </Button>

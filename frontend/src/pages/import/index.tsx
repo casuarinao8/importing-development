@@ -15,6 +15,7 @@ import Progress from './components/progress';
 import Papa from 'papaparse';
 import Wrapper from '../../components/wrapper';
 import { Utils } from '../../utils';
+import { config } from '../../utils/config';
 
 type ImportStep = 'upload' | 'preview' | 'progress' | 'results';
 
@@ -89,7 +90,7 @@ export default function DataImport() {
   };
 
   const handleDownloadTemplate = () => {
-    const url = import.meta.env.VITE_TEMPLATE_URL;
+    const url = config.TEMPLATE_URL;
     window.open(url, '_blank');
   };
 
@@ -386,7 +387,7 @@ export default function DataImport() {
   return (
     <Wrapper loading={!contact}>
       <div className='p-4 md:px-6 max-w-[1200px] mx-auto'>
-        <h1 className='text-2xl font-semibold align-left mb-6'>{import.meta.env.VITE_IMPORT_TITLE}</h1>
+        <h1 className='text-2xl font-semibold align-left mb-6'>{config.IMPORT_TITLE}</h1>
         {renderStep()}
       </div>
     </Wrapper>

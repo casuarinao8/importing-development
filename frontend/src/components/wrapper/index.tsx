@@ -13,11 +13,8 @@ export default function Wrapper(props: Props) {
 
   useEffect(() => {
     Proxy.Contact.getSelf().then(contact => {
-      if (contact && Utils.isPublic) window.location.href = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME_PRIVATE}`;
-      else if (!contact && !Utils.isPublic) Utils.login(window);
-      else {
-        contactContext?.setContact(contact);
-      }
+      if (!contact) Utils.login(window);
+      else contactContext?.setContact(contact);
     });
   }, []);
 

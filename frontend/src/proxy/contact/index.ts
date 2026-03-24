@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { APIContact, APIContactType, APIRelationship, UpdateContactOptions } from './types';
 import ImportManager from './import';
+import { config } from '../../utils/config';
 
 export default class ContactManager {
-	private static route = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact`;
+	private static route = `${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact`;
 
 	static Import = ImportManager;
 

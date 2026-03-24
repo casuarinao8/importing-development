@@ -1,18 +1,16 @@
 import axios from 'axios';
+import { config } from './config';
 
 export namespace Utils {
-  /** Indicates whether the current project is public or not */
-  export const isPublic = import.meta.env.VITE_SITENAME == import.meta.env.VITE_SITENAME_PUBLIC;
-
   /** Redirects the window to the login page, and a redirect to go back into if they login again */
   export function login(window: Window) {
-    window.location.href = `${import.meta.env.VITE_DOMAIN}/wp-login.php?redirect_to=${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME_PRIVATE}`;
+    window.location.href = `${config.DOMAIN}/wp-login.php?redirect_to=${config.DOMAIN}/${import.meta.env.VITE_SITENAME}`;
   }
 
   /** Logs the user out and redirects them to the public page */
   export async function logout(window: Window) {
-    await axios.post(`${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/wordpress/logout.php`);
-    window.location.href = `${import.meta.env.VITE_DOMAIN}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
+    await axios.post(`${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/wordpress/logout.php`);
+    window.location.href = `${config.DOMAIN}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
   }
 
   /** Returns whether an object is empty */
@@ -37,17 +35,17 @@ export namespace Utils {
   }
 
   export async function hasPermission(permission: string) {
-    const response = await axios.get<number>(`${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/wordpress/has_permission.php?permission=${permission}`);
+    const response = await axios.get<number>(`${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/wordpress/has_permission.php?permission=${permission}`);
     return Boolean(response.data);
   }
 
   export async function encode(data: string) {
-    const response = await axios.post<string>(`${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/encode.php`, { data });
+    const response = await axios.post<string>(`${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/encode.php`, { data });
     return response.data;
   }
 
   export async function decode(encryption: string) {
-    const response = await axios.post<string>(`${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/decode.php`, { data: encryption });
+    const response = await axios.post<string>(`${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/decode.php`, { data: encryption });
     return response.data;
   }
 

@@ -5,7 +5,6 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import Root from './pages/root';
 import { SubtypesProvider } from './contexts/Contact';
-import { Utils } from './utils';
 import { createTheme, StyledEngineProvider, ThemeProvider } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -42,12 +41,10 @@ createRoot(document.getElementById('root')!).render(
                 <Route path='*' element={<NotFound />} />
                 <Route path='/noperms' element={<NoPerms />} />
                 <Route path='/test' element={<Test />} />
-                {!Utils.isPublic && <>
-                  <Route path='/' index element={<Root />} />
-                  <Route path='/auth/:encrypted' element={<Auth />} />
-                  <Route path='/import' element={<DataImport />} />
-                  <Route path='/import/settings' element={<Settings />} />
-                </>}
+                <Route path='/' index element={<Root />} />
+                <Route path='/auth/:encrypted' element={<Auth />} />
+                <Route path='/import' element={<DataImport />} />
+                <Route path='/import/settings' element={<Settings />} />
               </Routes>
             </HashRouter>
           </SubtypesProvider>

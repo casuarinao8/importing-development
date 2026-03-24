@@ -30,22 +30,46 @@ cd ..
 composer install
 ```
 
-## Building and Uploading
+## Building
 
-Note that the name of the folder will be how you access your page each time you compile.
-For example, if your project is located in **xampp/htdocs/wordpress/portal/**, it would be in http://localhost/wordpress/portal.
+The frontend only needs to be built **once**. The same build works across all client deployments.
 
-1. Create an .env file in `/frontend`. Refer to https://docs.google.com/document/d/1LJtUhRuNbzV346x-D1-tgd2wqFoD2TY54MZzO4F41dQ/edit?usp=sharing
+1. Ensure `/frontend/.env` exists with the build-time settings:
 
-2. Optionally, if you're familiar with typings, go to `/frontend/src/vite-env.d.ts` to create any new environment variables that you may need for the project.
+```env
+VITE_SITENAME=portal
+VITE_BATCH_SIZE=50
+```
 
-3. Compile the project at the `/frontend` directory
+2. Compile the project from the `/frontend` directory:
 
 ```bash
 npm run build
 ```
 
-4. Copy and paste all folders (except the `frontend` directory) into your file manager.
+## Deploying to a Client
+
+No rebuild is needed per client. Only `config.js` changes.
+
+1. Copy all folders (except the `frontend` directory) into the client's WordPress file manager (e.g., `xampp/htdocs/wordpress/portal/`). The folder name determines the URL path (e.g., `http://localhost/wordpress/portal`).
+
+2. Copy `config.example.js` to `config.js` in the deployed folder and update the values for the client:
+
+```js
+window.__APP_CONFIG__ = {
+  DOMAIN: "https://clientname.socialservicesconnect.com",
+  IMPORT_TITLE: "Client Data Import",
+  TEMPLATE_URL: "https://docs.google.com/spreadsheets/d/SHEET_ID/edit",
+  LATEST_DONATIONS_URL: "https://clientname.socialservicesconnect.com/wp-admin/admin.php?page=CiviCRM&q=civicrm%2Fimported-date",
+};
+```
+
+| Property | Description |
+|---|---|
+| `DOMAIN` | The client's site URL (no trailing slash) |
+| `IMPORT_TITLE` | Page title shown on the import screen |
+| `TEMPLATE_URL` | Google Sheets link for the CSV import template |
+| `LATEST_DONATIONS_URL` | CiviCRM report URL for latest imported donations |
 
 ## Possible Questions
 
@@ -58,3 +82,7 @@ When you compile, we made it so that the build is actually created in the root f
 This is because the project uses WordPress and CiviCRM API endpoints, both of which likely have CORS (Cross-Origin Resource Sharing) restrictions enabled. CORS is a security feature that prevents web pages from making requests to domains other than their own. Since your React app is served on a different port or domain during development (via npm run dev), it can't make API calls to CiviCRM or WordPress due to CORS issues.
 
 To work around this, you can compile your React app inside the wordpress folder. This makes the app appear as if it's part of the WordPress installation, avoiding the CORS issue. This way, you can directly access CiviCRM API endpoints as if they are part of the same domain.
+
+3. **How do I deploy to a new client without rebuilding?**
+
+Just copy the already-built files to the client's WordPress directory and create a `config.js` with their specific values (see "Deploying to a Client" above). The JS/CSS bundle is identical across all clients.
