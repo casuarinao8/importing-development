@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Paper, Button, Typography, Box, Alert } from '@mui/material';
 import { CloudUpload } from '@mui/icons-material';
-import { ContactValidator } from '../components/validation-utils';
 import { ImportContact } from '../../../proxy/contact/import/types';
+import { UploadCsvMapper, UploadCSVFormat } from '../components/csv-mapper';
 
 interface UploadCSVProps {
   onUpload: (data: ImportContact[], fileName: string, fileSize: string) => Promise<void>;
@@ -14,6 +14,20 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string>('Choose CSV File');
+  const [detectedFormat, setDetectedFormat] = useState<UploadCSVFormat | null>(null);
+
+  const getFormatLabel = (format: UploadCSVFormat): string => {
+    switch (format) {
+      case 'mapped-template':
+        return 'Mapped template CSV';
+      case 'giving-sg-raw':
+        return 'giving.sg raw CSV';
+      case 'giveasia-raw':
+        return 'GiveAsia raw CSV';
+      default:
+        return 'Unknown format';
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -44,6 +58,7 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
   const handleFile = async (file: File) => {
     setError('');
     setIsProcessing(true);
+    setDetectedFormat(null);
 
     // Validate file type
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -63,10 +78,11 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
 
     try {
       const text = await file.text();
-      const contacts = ContactValidator.parseCSV(text);
+      const { contacts, format } = UploadCsvMapper.parse(text);
+      setDetectedFormat(format);
       
       if (contacts.length === 0) {
-        setError('No valid data found in the CSV file. Please check the format.');
+        setError('No valid data found in the CSV file. Please check the format and headers.');
         setIsProcessing(false);
         setContinueButton(false);
         return;
@@ -92,6 +108,18 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
       {error && (
         <Alert severity="error" className="mb-4">
           {error}
+        </Alert>
+      )}
+
+      {!error && detectedFormat && detectedFormat !== 'unknown' && (
+        <Alert severity="info" className="mb-4">
+          Detected source: {getFormatLabel(detectedFormat)}. Mapping was applied automatically.
+        </Alert>
+      )}
+
+      {!error && detectedFormat === 'unknown' && (
+        <Alert severity="warning" className="mb-4">
+          CSV format could not be confidently identified. Parsed with default mapped-template rules.
         </Alert>
       )}
 
