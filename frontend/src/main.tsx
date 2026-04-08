@@ -15,6 +15,7 @@ import NoPerms from './pages/no-perms';
 import NotFound from './pages/not-found';
 import DataImport from './pages/import/';
 import Settings from './pages/import/settings';
+import ErrorReports from './pages/import/error-reports';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 dayjs.extend(customParseFormat);
@@ -45,6 +46,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path='/auth/:encrypted' element={<Auth />} />
                 <Route path='/import' element={<DataImport />} />
                 <Route path='/import/settings' element={<Settings />} />
+                <Route path='/import/error-reports' element={<ErrorReports />} />
               </Routes>
             </HashRouter>
           </SubtypesProvider>

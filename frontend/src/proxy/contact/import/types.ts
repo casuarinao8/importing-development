@@ -80,3 +80,76 @@ export interface APIImportSettings {
   import_contact_types: string[];
   import_custom_fields: string[];
 }
+
+export interface APIImportErrorReportUser {
+  user_id: number;
+  user_login: string;
+}
+
+export interface APIImportErrorReportTotals {
+  contacts_processed: number;
+  new_contacts: number;
+  updated_contacts: number;
+  contributions: number;
+  errors: number;
+}
+
+export interface APIImportErrorReportBatch {
+  batch_number: number | null;
+  batch_size: number | null;
+  contacts_in_batch: number;
+  errors_in_batch: number;
+  saved_at: string;
+}
+
+export interface APIImportErrorReportContactContribution {
+  trxn_id?: string | null;
+  total_amount?: number | string | null;
+  receive_date?: string | null;
+  financial_type?: string | null;
+  imported_date?: string | null;
+  received_date?: string | null;
+}
+
+export interface APIImportErrorReportContact {
+  contact_id?: number | null;
+  row?: number | null;
+  label?: string | null;
+  name?: string | null;
+  contact_type?: string | null;
+  external_identifier?: string | null;
+  email_primary?: string | null;
+  phone_primary?: string | null;
+  contribution?: APIImportErrorReportContactContribution;
+}
+
+export interface APIImportErrorReportError {
+  row: number | null;
+  row_end: number | null;
+  field: string;
+  message: string;
+  contact?: APIImportErrorReportContact;
+}
+
+export interface APIImportErrorReport {
+  import_run_id: string;
+  created_at: string;
+  updated_at: string;
+  saved_by: APIImportErrorReportUser;
+  totals: APIImportErrorReportTotals;
+  batches: APIImportErrorReportBatch[];
+  errors: APIImportErrorReportError[];
+  errors_truncated: boolean;
+}
+
+export interface APISaveValidationErrorReportPayload {
+  importRunId: string;
+  summary: {
+    totalRecords: number;
+    validRecords: number;
+    reviewRecords: number;
+    fileName: string;
+    fileSize: string;
+  };
+  errors: APIImportErrorReportError[];
+}

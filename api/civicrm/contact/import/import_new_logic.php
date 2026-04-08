@@ -3,6 +3,7 @@ set_time_limit(300); // 5 minutes - CiviCRM hooks (CiviRules, emails, contridivi
 
 require_once '../../../../../wp-load.php';
 require_once '../../../../../wp-content/plugins/civicrm/civicrm/civicrm.config.php';
+require_once './error_reports_table.php';
 
 $user = wp_get_current_user();
 if (empty($user)) {
@@ -10,6 +11,11 @@ if (empty($user)) {
   echo json_encode(['error' => 'User not logged in']);
   exit;
 }
+
+$contacts = [];
+$batchNumber = null;
+$batchSize = null;
+$importRunId = null;
 
 try {
   $post = json_decode(file_get_contents("php://input"), true);
@@ -21,6 +27,7 @@ try {
   $contacts = $post['contacts'] ?? [];
   $batchNumber = $post['batchNumber'] ?? null;
   $batchSize = $post['batchSize'] ?? null;
+  $importRunId = !empty($post['importRunId']) ? sanitize_text_field($post['importRunId']) : wp_generate_uuid4();
 
   $taxDeductibleFinancialTypeId = 5;
   $orgSubtype = resolveContactSubtype('Organization', ['Organisation_Donor', 'Organisation_donor']);
@@ -508,7 +515,22 @@ try {
 
   error_log("[IMPORTING] Import completed - New: " . count($newContacts) . ", Updated: " . count($updatedContacts) . ", Contributions: " . count($importedContributions) . ", Errors: " . count($errors));
 
+  if (!empty($errors)) {
+    saveImportErrorReport(
+      $importRunId,
+      $errors,
+      $batchNumber,
+      $batchSize,
+      count($contacts),
+      count($newContacts),
+      count($updatedContacts),
+      count($importedContributions),
+      $user
+    );
+  }
+
   $response = [
+    'importRunId' => $importRunId,
     'newContacts' => $newContacts,
     'updatedContacts' => $updatedContacts,
     'contributions' => $importedContributions,
@@ -519,9 +541,107 @@ try {
   echo json_encode($response);
 
 } catch (\Throwable $e) {
+  if (!empty($contacts)) {
+    try {
+      saveImportErrorReport(
+        $importRunId ?: wp_generate_uuid4(),
+        [[
+          'field' => 'general',
+          'message' => 'Fatal import error: ' . $e->getMessage()
+        ]],
+        $batchNumber,
+        $batchSize,
+        count($contacts),
+        0,
+        0,
+        0,
+        $user
+      );
+    } catch (\Throwable $storageError) {
+      error_log("[IMPORTING] Failed to persist fatal error report: " . $storageError->getMessage());
+    }
+  }
+
   http_response_code(400);
   echo json_encode(['error' => $e->getMessage()]);
   error_log("[IMPORTING] Fatal error (" . get_class($e) . "): " . $e->getMessage());
+}
+
+
+function saveImportErrorReport($importRunId, array $errors, $batchNumber, $batchSize, $contactsInBatch, $newContactsCount, $updatedContactsCount, $contributionsCount, $user)
+{
+  if (empty($errors)) {
+    return;
+  }
+
+  $normalizedErrors = array_map('normalizeImportErrorEntry', $errors);
+  importing_error_reports_upsert_rows(
+    $importRunId,
+    $normalizedErrors,
+    [
+      'source' => 'import_runtime',
+      'batch_number' => $batchNumber !== null ? (int) $batchNumber : null,
+      'batch_size' => $batchSize !== null ? (int) $batchSize : null,
+      'contacts_in_batch' => (int) $contactsInBatch,
+      'new_contacts_count' => (int) $newContactsCount,
+      'updated_contacts_count' => (int) $updatedContactsCount,
+      'contributions_count' => (int) $contributionsCount,
+      'total_records' => null,
+      'valid_records' => null,
+      'review_records' => null,
+      'file_name' => null,
+      'file_size' => null,
+    ],
+    $user
+  );
+}
+
+
+function normalizeImportErrorEntry($error)
+{
+  if (!is_array($error)) {
+    return [
+      'row' => null,
+      'row_end' => null,
+      'field' => 'general',
+      'message' => (string) $error,
+    ];
+  }
+
+  $normalized = [
+    'row' => isset($error['row']) ? (int) $error['row'] : null,
+    'row_end' => isset($error['row_end']) ? (int) $error['row_end'] : null,
+    'field' => isset($error['field']) ? (string) $error['field'] : 'general',
+    'message' => isset($error['message']) ? (string) $error['message'] : 'Unknown import error',
+  ];
+
+  if (isset($error['contact']) && is_array($error['contact'])) {
+    $contact = $error['contact'];
+    $normalized['contact'] = [
+      'contact_id' => $contact['contact_id'] ?? null,
+      'row' => isset($contact['row']) ? (int) $contact['row'] : null,
+      'label' => $contact['label'] ?? null,
+      'name' => $contact['name'] ?? null,
+      'contact_type' => $contact['contact_type'] ?? null,
+      'external_identifier' => $contact['external_identifier'] ?? null,
+      'email_primary' => $contact['email_primary'] ?? null,
+      'phone_primary' => $contact['phone_primary'] ?? null,
+    ];
+
+    if (isset($contact['contribution']) && is_array($contact['contribution'])) {
+      $contribution = $contact['contribution'];
+      $normalized['contact']['contribution'] = [
+        'trxn_id' => $contribution['trxn_id'] ?? null,
+        'total_amount' => $contribution['total_amount'] ?? null,
+        'receive_date' => $contribution['receive_date'] ?? null,
+        'financial_type' => $contribution['financial_type'] ?? null,
+        'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date'] ?? null,
+        'received_date' => $contribution['Additional_Contribution_Details.Received_Date'] ?? null,
+      ];
+    }
+  }
+
+  return $normalized;
 }
 
 

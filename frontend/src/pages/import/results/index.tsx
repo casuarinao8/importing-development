@@ -1,5 +1,6 @@
 import { Typography, Alert, Button, Box } from '@mui/material';
-import { CheckCircle, Error, ArrowBack } from '@mui/icons-material';
+import { CheckCircle, Error, ArrowBack, History } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import TotalRecordsCard from '../components/total-records-card';
 import ImportSummaryComponent from '../components/import-summary';
 import { ImportSummary, ImportResults } from '../../../proxy/contact/import/types';
@@ -16,6 +17,7 @@ export default function Results({
   results,
   onBackToImport
 }: ResultsProps) {
+  const navigate = useNavigate();
   const hasErrors = results.numberOfErrors > 0;
   const hasSuccess = results.newContacts.length > 0 || results.updatedContacts.length > 0;
 
@@ -54,7 +56,7 @@ export default function Results({
       <ImportSummaryComponent summary={summary} result={results} mode="results" />
 
       {/* Buttons */}
-      <Box className="flex justify-between mt-6 pt-6 border-t" sx={{alignItems: 'flex-end'}}>
+      <Box className="flex flex-wrap justify-between mt-6 pt-6 border-t gap-2" sx={{alignItems: 'flex-end'}}>
         <Button 
           variant="outlined" 
           startIcon={<ArrowBack />}
@@ -62,16 +64,26 @@ export default function Results({
         >
           Start Another Import
         </Button>
-        
-        {hasSuccess && (
-          <Button 
-            variant="contained" 
-            color="primary"
-            onClick={() => {window.open(config.LATEST_DONATIONS_URL, '_blank')}}
+
+        <div className='flex gap-2'>
+          <Button
+            variant="outlined"
+            startIcon={<History />}
+            onClick={() => navigate('/import/error-reports')}
           >
-            Latest Imported Donations Report
+            Saved Error Reports
           </Button>
-        )}
+
+          {hasSuccess && (
+            <Button 
+              variant="contained" 
+              color="primary"
+              onClick={() => {window.open(config.LATEST_DONATIONS_URL, '_blank')}}
+            >
+              Latest Imported Donations Report
+            </Button>
+          )}
+        </div>
       </Box>
     </>
   ;

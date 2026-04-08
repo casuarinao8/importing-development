@@ -233,14 +233,35 @@ export class ContactValidator {
 
   private static safeToNumber(value: string): number | string {
     if (!value || value.trim() === '') return '';
-    const num = Number(value);
-    return isNaN(num) ? value : num;
+    const normalized = value.trim();
+    const num = Number(normalized);
+    if (!isNaN(num)) return num;
+
+    const excelCode = this.parseExcelDateCode(normalized);
+    if (excelCode !== null) return excelCode;
+
+    return normalized;
   }
 
   private static safeToNumberOrNull(value: string): number | string | null {
     if (!value || value.trim() === '') return null;
-    const num = Number(value);
-    return isNaN(num) ? value : num;
+    return this.safeToNumber(value);
+  }
+
+  private static parseExcelDateCode(value: string): number | null {
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)?$/i.exec(value);
+    if (!match) return null;
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+
+    // Legacy exports sometimes encode numeric option values as Jan-1900 dates
+    if ((year === 1900 || year === 1899) && month === 1 && day >= 1 && day <= 31) {
+      return day;
+    }
+
+    return null;
   }
 
   static parseCSV(csvText: string): ImportContact[] {
