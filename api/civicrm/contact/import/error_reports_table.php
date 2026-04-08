@@ -8,6 +8,24 @@ if (!defined('IMPORTING_ERROR_REPORTS_MAX_ERRORS_PER_RUN')) {
   define('IMPORTING_ERROR_REPORTS_MAX_ERRORS_PER_RUN', 2000);
 }
 
+if (!defined('IMPORTING_ERROR_REPORTS_RETENTION_DAYS')) {
+  define('IMPORTING_ERROR_REPORTS_RETENTION_DAYS', 30);
+}
+
+if (!defined('IMPORTING_ERROR_REPORTS_SINGAPORE_TIMEZONE')) {
+  define('IMPORTING_ERROR_REPORTS_SINGAPORE_TIMEZONE', 'Asia/Singapore');
+}
+
+if (!defined('IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK')) {
+  define('IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK', 'importing_error_reports_daily_cleanup');
+}
+
+if (function_exists('add_action') && function_exists('has_action')) {
+  if (!has_action(IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK, 'importing_error_reports_run_daily_cleanup')) {
+    add_action(IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK, 'importing_error_reports_run_daily_cleanup');
+  }
+}
+
 
 function importing_error_reports_table_name()
 {
@@ -108,6 +126,7 @@ function importing_error_reports_ensure_table()
     $wpdb->query("ALTER TABLE `{$table}` ADD INDEX idx_updated_at (updated_at)");
   }
 
+  importing_error_reports_schedule_daily_cleanup();
   importing_error_reports_compact_duplicate_runs($table);
 
   if (!$hasUniqueImportRunIndex) {
@@ -351,10 +370,17 @@ function importing_error_reports_fetch_reports($limit = 20)
 
   $table = importing_error_reports_table_name();
   $limit = max(1, min(100, (int) $limit));
+  $cutoffDb = importing_error_reports_cutoff_db_datetime();
 
   $runRows = $wpdb->get_results(
     $wpdb->prepare(
-      "SELECT import_run_id, MAX(updated_at) AS latest_updated FROM `{$table}` GROUP BY import_run_id ORDER BY latest_updated DESC LIMIT %d",
+      "SELECT import_run_id, MAX(updated_at) AS latest_updated
+      FROM `{$table}`
+      WHERE COALESCE(updated_at, created_at) >= %s
+      GROUP BY import_run_id
+      ORDER BY latest_updated DESC
+      LIMIT %d",
+      $cutoffDb,
       $limit
     ),
     ARRAY_A
@@ -390,7 +416,7 @@ function importing_error_reports_fetch_report_by_run_id($runId)
     return null;
   }
 
-  $rows = importing_error_reports_load_rows_by_run_id($runId);
+  $rows = importing_error_reports_load_rows_by_run_id($runId, true);
   if (empty($rows)) {
     return null;
   }
@@ -399,11 +425,28 @@ function importing_error_reports_fetch_report_by_run_id($runId)
 }
 
 
-function importing_error_reports_load_rows_by_run_id($runId)
+function importing_error_reports_load_rows_by_run_id($runId, $recentOnly = false)
 {
   global $wpdb;
 
   $table = importing_error_reports_table_name();
+
+  if ($recentOnly) {
+    $cutoffDb = importing_error_reports_cutoff_db_datetime();
+
+    return $wpdb->get_results(
+      $wpdb->prepare(
+        "SELECT *
+        FROM `{$table}`
+        WHERE import_run_id = %s
+        AND COALESCE(updated_at, created_at) >= %s
+        ORDER BY updated_at DESC, id DESC",
+        $runId,
+        $cutoffDb
+      ),
+      ARRAY_A
+    );
+  }
 
   return $wpdb->get_results(
     $wpdb->prepare(
@@ -756,6 +799,91 @@ function importing_error_reports_db_to_iso($datetime)
   }
 
   return gmdate('c', $timestamp);
+}
+
+
+function importing_error_reports_schedule_daily_cleanup()
+{
+  if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
+    return;
+  }
+
+  $hook = IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK;
+  $nextScheduled = wp_next_scheduled($hook);
+
+  if ($nextScheduled !== false) {
+    $scheduledAtSg = (new DateTimeImmutable('@' . (int) $nextScheduled))
+      ->setTimezone(new DateTimeZone(IMPORTING_ERROR_REPORTS_SINGAPORE_TIMEZONE));
+
+    if ($scheduledAtSg->format('H:i:s') === '00:00:00') {
+      return;
+    }
+
+    if (function_exists('wp_unschedule_event')) {
+      wp_unschedule_event((int) $nextScheduled, $hook);
+    }
+  }
+
+  $nextRun = importing_error_reports_next_singapore_midnight_utc_timestamp();
+  if ($nextRun <= 0) {
+    return;
+  }
+
+  wp_schedule_event($nextRun, 'daily', $hook);
+}
+
+
+function importing_error_reports_next_singapore_midnight_utc_timestamp()
+{
+  $sgTimezone = new DateTimeZone(IMPORTING_ERROR_REPORTS_SINGAPORE_TIMEZONE);
+  $utcTimezone = new DateTimeZone('UTC');
+
+  $nowSg = new DateTimeImmutable('now', $sgTimezone);
+  $nextSgMidnight = $nowSg->setTime(0, 0, 0);
+  if ($nextSgMidnight <= $nowSg) {
+    $nextSgMidnight = $nextSgMidnight->modify('+1 day');
+  }
+
+  return $nextSgMidnight->setTimezone($utcTimezone)->getTimestamp();
+}
+
+
+function importing_error_reports_run_daily_cleanup()
+{
+  importing_error_reports_ensure_table();
+  importing_error_reports_delete_expired_rows();
+}
+
+
+function importing_error_reports_cutoff_db_datetime()
+{
+  $retentionDays = max(1, (int) IMPORTING_ERROR_REPORTS_RETENTION_DAYS);
+
+  $sgTimezone = new DateTimeZone(IMPORTING_ERROR_REPORTS_SINGAPORE_TIMEZONE);
+  $utcTimezone = new DateTimeZone('UTC');
+
+  $nowSg = new DateTimeImmutable('now', $sgTimezone);
+  $cutoffSg = $nowSg->modify("-{$retentionDays} days");
+
+  return $cutoffSg->setTimezone($utcTimezone)->format('Y-m-d H:i:s');
+}
+
+
+function importing_error_reports_delete_expired_rows()
+{
+  global $wpdb;
+
+  $table = importing_error_reports_table_name();
+  $cutoffDb = importing_error_reports_cutoff_db_datetime();
+
+  $wpdb->query(
+    $wpdb->prepare(
+      "DELETE FROM `{$table}`
+      WHERE COALESCE(updated_at, created_at) IS NOT NULL
+      AND COALESCE(updated_at, created_at) < %s",
+      $cutoffDb
+    )
+  );
 }
 
 

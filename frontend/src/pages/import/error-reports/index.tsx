@@ -124,6 +124,10 @@ export default function ErrorReports() {
           </div>
         </div>
 
+        <Alert severity='info' className='mb-4'>
+          Showing error logs from the last 30 days. Logs older than 30 days are deleted daily at 12:00 AM Singapore time.
+        </Alert>
+
         {errorMessage && (
           <Alert severity='error' className='mb-4'>
             {errorMessage}
@@ -131,7 +135,9 @@ export default function ErrorReports() {
         )}
 
         {!loading && reports.length === 0 && (
-          <Alert severity='info'>No saved error reports found yet.</Alert>
+          <div className='flex items-center justify-center p-12 text-gray-500'>
+            No saved error reports found yet.
+          </div>
         )}
 
         {!loading && reports.length > 0 && (
