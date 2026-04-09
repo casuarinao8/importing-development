@@ -30,7 +30,7 @@ export interface Contribution {
   trxn_id: string;
   check_number?: string;
   "Additional_Contribution_Details.NRIC_FIN_UEN": string | null;
-  "Additional_Contribution_Details.Campaign": string | null;
+  "Additional_Contribution_Details.Campaign": number | null;
   "Additional_Contribution_Details.Payment_Platform": number | null;
   "Additional_Contribution_Details.Recurring_Donation": number | null;
   "Additional_Contribution_Details.Remarks": string;

@@ -78,7 +78,7 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
 
     try {
       const text = await file.text();
-      const { contacts, format } = UploadCsvMapper.parse(text);
+      const { contacts, format } = await UploadCsvMapper.parse(text);
       setDetectedFormat(format);
       
       if (contacts.length === 0) {

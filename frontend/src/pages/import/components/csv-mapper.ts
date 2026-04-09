@@ -1,5 +1,7 @@
 import Papa from 'papaparse';
 import { ImportContact } from '../../../proxy/contact/import/types';
+import { Proxy } from '../../../proxy';
+import { APICustomField, APIOptionValue } from '../../../proxy/custom-fields/types';
 import { ContactValidator } from './validation-utils';
 
 export type UploadCSVFormat = 'mapped-template' | 'giving-sg-raw' | 'giveasia-raw' | 'unknown';
@@ -7,6 +9,16 @@ export type UploadCSVFormat = 'mapped-template' | 'giving-sg-raw' | 'giveasia-ra
 export interface ParsedUploadCSVResult {
   contacts: ImportContact[];
   format: UploadCSVFormat;
+}
+
+interface DynamicCodeMaps {
+  salutation: Record<string, number>;
+  frequency: Record<string, number>;
+  campaign: Record<string, number>;
+  platform: Record<string, number>;
+  financialType: Record<string, number>;
+  contributionStatus: Record<string, number>;
+  paymentMethod: Record<string, number>;
 }
 
 const DEFAULT_ANONYMOUS_NAME = 'Anonymous Donor';
@@ -97,7 +109,9 @@ const PAYMENT_METHOD_CODE_MAP: Record<string, number> = {
 };
 
 export class UploadCsvMapper {
-  static parse(csvText: string): ParsedUploadCSVResult {
+  private static codeMapsPromise: Promise<DynamicCodeMaps> | null = null;
+
+  static async parse(csvText: string): Promise<ParsedUploadCSVResult> {
     const rowParse = Papa.parse<string[]>(csvText, {
       skipEmptyLines: 'greedy'
     });
@@ -114,14 +128,14 @@ export class UploadCsvMapper {
 
     if (detectedFormat === 'giving-sg-raw') {
       return {
-        contacts: this.parseGivingSgRaw(csvText),
+        contacts: await this.parseGivingSgRaw(csvText),
         format: detectedFormat
       };
     }
 
     if (detectedFormat === 'giveasia-raw') {
       return {
-        contacts: this.parseGiveAsiaRaw(rows),
+        contacts: await this.parseGiveAsiaRaw(rows),
         format: detectedFormat
       };
     }
@@ -176,11 +190,12 @@ export class UploadCsvMapper {
     return /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(firstCell) || platformCell.toLowerCase() === 'give.asia';
   }
 
-  private static parseGivingSgRaw(csvText: string): ImportContact[] {
+  private static async parseGivingSgRaw(csvText: string): Promise<ImportContact[]> {
     const parsed = Papa.parse<Record<string, string>>(csvText, {
       header: true,
       skipEmptyLines: 'greedy'
     });
+    const codeMaps = await this.getCodeMaps();
 
     const contacts: ImportContact[] = [];
 
@@ -225,7 +240,7 @@ export class UploadCsvMapper {
 
       const contact = this.createEmptyContact();
       contact.contact_type = inferredContactType;
-      contact.prefix_id = this.mapCode(salutation, SALUTATION_CODE_MAP);
+      contact.prefix_id = this.mapCode(salutation, codeMaps.salutation);
       contact.name = donorName || DEFAULT_ANONYMOUS_NAME;
       contact.preferred_name = preferredDisplayName;
       contact.external_identifier = externalIdentifier;
@@ -236,17 +251,17 @@ export class UploadCsvMapper {
       contact.postal_code = postalCode;
 
       contact.contribution.financial_type = taxDeduction;
-      contact.contribution.financial_type_id = this.mapCode(taxDeduction, FINANCIAL_TYPE_CODE_MAP);
-      contact.contribution.contribution_status_id = this.mapCode(transactionStatus, CONTRIBUTION_STATUS_CODE_MAP) ?? 0;
+      contact.contribution.financial_type_id = this.mapCode(taxDeduction, codeMaps.financialType);
+      contact.contribution.contribution_status_id = this.mapCode(transactionStatus, codeMaps.contributionStatus) ?? 0;
       contact.contribution.total_amount = this.parseAmount(donationAmount);
       contact.contribution.source = campaignName || campaignType || npoName;
-      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, CAMPAIGN_CODE_MAP);
+      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, codeMaps.campaign);
       contact.contribution.receive_date = this.normalizeDateForImport(donationDate);
-      contact.contribution.payment_instrument_id = this.mapCode(paymentMethod, PAYMENT_METHOD_CODE_MAP);
+      contact.contribution.payment_instrument_id = this.mapCode(paymentMethod, codeMaps.paymentMethod);
       contact.contribution.trxn_id = donationReference;
       contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = externalIdentifier || null;
-      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('Giving.sg', PLATFORM_CODE_MAP);
-      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(donationType, FREQUENCY_CODE_MAP);
+      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('Giving.sg', codeMaps.platform);
+      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(donationType, codeMaps.frequency);
       contact.contribution['Additional_Contribution_Details.Remarks'] = remarks;
       contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
       contact.contribution['Additional_Contribution_Details.Received_Date'] = this.normalizeDateForImport(disbursementDate);
@@ -261,7 +276,8 @@ export class UploadCsvMapper {
     return contacts;
   }
 
-  private static parseGiveAsiaRaw(rows: string[][]): ImportContact[] {
+  private static async parseGiveAsiaRaw(rows: string[][]): Promise<ImportContact[]> {
+    const codeMaps = await this.getCodeMaps();
     const contacts: ImportContact[] = [];
 
     rows.forEach((row) => {
@@ -297,17 +313,17 @@ export class UploadCsvMapper {
       contact.postal_code = addressParts.postalCode;
 
       contact.contribution.financial_type = taxDeduction;
-      contact.contribution.financial_type_id = this.mapCode(taxDeduction, FINANCIAL_TYPE_CODE_MAP);
+      contact.contribution.financial_type_id = this.mapCode(taxDeduction, codeMaps.financialType);
       contact.contribution.contribution_status_id = 1;
       contact.contribution.total_amount = this.parseAmount(totalAmount);
       contact.contribution.source = campaignName;
-      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, CAMPAIGN_CODE_MAP);
+      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, codeMaps.campaign);
       contact.contribution.receive_date = this.normalizeDateForImport(receiveDate);
-      contact.contribution.payment_instrument_id = this.mapCode('GiveAsia', PAYMENT_METHOD_CODE_MAP);
+      contact.contribution.payment_instrument_id = this.mapCode('GiveAsia', codeMaps.paymentMethod);
       contact.contribution.trxn_id = transactionId;
       contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = externalIdentifier || null;
-      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('GiveAsia', PLATFORM_CODE_MAP);
-      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(frequency, FREQUENCY_CODE_MAP);
+      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('GiveAsia', codeMaps.platform);
+      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(frequency, codeMaps.frequency);
       contact.contribution['Additional_Contribution_Details.Remarks'] = remarks;
       contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
       contact.contribution['Additional_Contribution_Details.Received_Date'] = '';
@@ -320,6 +336,147 @@ export class UploadCsvMapper {
     });
 
     return contacts;
+  }
+
+  private static async getCodeMaps(): Promise<DynamicCodeMaps> {
+    if (!this.codeMapsPromise) {
+      this.codeMapsPromise = this.loadCodeMaps();
+    }
+
+    return this.codeMapsPromise;
+  }
+
+  private static async loadCodeMaps(): Promise<DynamicCodeMaps> {
+    const defaults = this.getDefaultCodeMaps();
+
+    const [salutation, financialType, contributionStatus, paymentMethod] = await Promise.all([
+      this.getOptionGroupCodeMap(['individual_prefix'], defaults.salutation),
+      this.getOptionGroupCodeMap(['financial_type'], defaults.financialType),
+      this.getOptionGroupCodeMap(['contribution_status'], defaults.contributionStatus),
+      this.getOptionGroupCodeMap(['payment_instrument'], defaults.paymentMethod)
+    ]);
+
+    let additionalContributionFields: APICustomField[] = [];
+    try {
+      additionalContributionFields = await Proxy.CustomField.getFieldsBySetName('Additional_Contribution_Details');
+    } catch (error) {
+      console.warn('Unable to load Additional_Contribution_Details field options. Falling back to default local mappings.', error);
+    }
+
+    return {
+      salutation,
+      frequency: this.getCustomFieldCodeMap(
+        additionalContributionFields,
+        ['Recurring_Donation', 'Recurring Donation'],
+        defaults.frequency
+      ),
+      campaign: this.getCustomFieldCodeMap(additionalContributionFields, ['Campaign'], defaults.campaign),
+      platform: this.getCustomFieldCodeMap(
+        additionalContributionFields,
+        ['Payment_Platform', 'Payment Platform'],
+        defaults.platform
+      ),
+      financialType,
+      contributionStatus,
+      paymentMethod
+    };
+  }
+
+  private static getDefaultCodeMaps(): DynamicCodeMaps {
+    return {
+      salutation: { ...SALUTATION_CODE_MAP },
+      frequency: { ...FREQUENCY_CODE_MAP },
+      campaign: { ...CAMPAIGN_CODE_MAP },
+      platform: { ...PLATFORM_CODE_MAP },
+      financialType: { ...FINANCIAL_TYPE_CODE_MAP },
+      contributionStatus: { ...CONTRIBUTION_STATUS_CODE_MAP },
+      paymentMethod: { ...PAYMENT_METHOD_CODE_MAP }
+    };
+  }
+
+  private static async getOptionGroupCodeMap(
+    optionGroupNames: string[],
+    fallbackMap: Record<string, number>
+  ): Promise<Record<string, number>> {
+    for (const optionGroupName of optionGroupNames) {
+      try {
+        const options = await Proxy.CustomField.getOptionValuesByGroupName(optionGroupName);
+        const dynamicMap = this.buildCodeMapFromOptions(options);
+
+        if (Object.keys(dynamicMap).length > 0) {
+          return this.mergeCodeMaps(fallbackMap, dynamicMap);
+        }
+      } catch (error) {
+        console.warn(`Unable to load option group "${optionGroupName}".`, error);
+      }
+    }
+
+    return { ...fallbackMap };
+  }
+
+  private static getCustomFieldCodeMap(
+    fields: APICustomField[],
+    aliases: string[],
+    fallbackMap: Record<string, number>
+  ): Record<string, number> {
+    const field = this.getMatchingCustomField(fields, aliases);
+    if (!field || !Array.isArray(field.options) || field.options.length === 0) {
+      return { ...fallbackMap };
+    }
+
+    const dynamicMap = this.buildCodeMapFromOptions(field.options);
+    if (Object.keys(dynamicMap).length === 0) {
+      return { ...fallbackMap };
+    }
+
+    return this.mergeCodeMaps(fallbackMap, dynamicMap);
+  }
+
+  private static getMatchingCustomField(fields: APICustomField[], aliases: string[]): APICustomField | undefined {
+    const normalizedAliases = aliases.map((alias) => this.normalizeLookupValue(alias));
+
+    return fields.find((field) => {
+      const normalizedName = this.normalizeLookupValue(field.name);
+      const normalizedLabel = this.normalizeLookupValue(field.label);
+
+      return normalizedAliases.some(
+        (alias) => normalizedName === alias || normalizedLabel === alias || normalizedName.includes(alias) || normalizedLabel.includes(alias)
+      );
+    });
+  }
+
+  private static buildCodeMapFromOptions(options: APIOptionValue[]): Record<string, number> {
+    const dynamicMap: Record<string, number> = {};
+
+    options.forEach((option) => {
+      const numericValue = Number(option.value);
+      if (Number.isNaN(numericValue)) {
+        return;
+      }
+
+      const labelKey = this.normalizeLookupValue(option.label ?? '');
+      const nameKey = this.normalizeLookupValue(option.name ?? '');
+
+      if (labelKey) {
+        dynamicMap[labelKey] = numericValue;
+      }
+
+      if (nameKey) {
+        dynamicMap[nameKey] = numericValue;
+      }
+    });
+
+    return dynamicMap;
+  }
+
+  private static mergeCodeMaps(
+    fallbackMap: Record<string, number>,
+    dynamicMap: Record<string, number>
+  ): Record<string, number> {
+    return {
+      ...fallbackMap,
+      ...dynamicMap
+    };
   }
 
   private static createEmptyContact(): ImportContact {
