@@ -24,6 +24,10 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
         return 'giving.sg raw CSV';
       case 'giveasia-raw':
         return 'GiveAsia raw CSV';
+      case 'benevity-raw':
+        return 'Benevity raw CSV';
+      case 'adhoc-raw':
+        return 'Adhoc raw CSV';
       default:
         return 'Unknown format';
     }

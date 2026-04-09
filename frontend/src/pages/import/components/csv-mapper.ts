@@ -4,7 +4,7 @@ import { Proxy } from '../../../proxy';
 import { APICustomField, APIOptionValue } from '../../../proxy/custom-fields/types';
 import { ContactValidator } from './validation-utils';
 
-export type UploadCSVFormat = 'mapped-template' | 'giving-sg-raw' | 'giveasia-raw' | 'unknown';
+export type UploadCSVFormat = 'mapped-template' | 'giving-sg-raw' | 'giveasia-raw' | 'benevity-raw' | 'adhoc-raw' | 'unknown';
 
 export interface ParsedUploadCSVResult {
   contacts: ImportContact[];
@@ -63,7 +63,9 @@ const PLATFORM_CODE_MAP: Record<string, number> = {
   'BENEVITY CAUSES': 3,
   'DIRECT DONATION': 4,
   INTERNAL: 5,
-  GIVEASIA: 6
+  GIVEASIA: 6,
+  SIMPLYGIVING: 4,
+  ADHOC: 9
 };
 
 const FINANCIAL_TYPE_CODE_MAP: Record<string, number> = {
@@ -96,6 +98,7 @@ const CONTRIBUTION_STATUS_CODE_MAP: Record<string, number> = {
 const PAYMENT_METHOD_CODE_MAP: Record<string, number> = {
   'CREDIT CARD': 1,
   PAYNOW: 2,
+  'PAY NOW': 2,
   CASH: 3,
   CHEQUE: 4,
   CHECK: 4,
@@ -103,10 +106,14 @@ const PAYMENT_METHOD_CODE_MAP: Record<string, number> = {
   'BANK TRANSFER': 6,
   GIRO: 7,
   GIVEASIA: 8,
+  ADHOC: 9,
+  BENEVITY: 10,
   'DONATION IN KIND': 9,
   ENETS: 10,
   GRABPAY: 11
 };
+
+const BENEVITY_USD_TO_SGD_RATE = 1.3;
 
 export class UploadCsvMapper {
   private static codeMapsPromise: Promise<DynamicCodeMaps> | null = null;
@@ -128,7 +135,7 @@ export class UploadCsvMapper {
 
     if (detectedFormat === 'giving-sg-raw') {
       return {
-        contacts: await this.parseGivingSgRaw(csvText),
+        contacts: await this.parseGivingSgRaw(rows, csvText),
         format: detectedFormat
       };
     }
@@ -136,6 +143,20 @@ export class UploadCsvMapper {
     if (detectedFormat === 'giveasia-raw') {
       return {
         contacts: await this.parseGiveAsiaRaw(rows),
+        format: detectedFormat
+      };
+    }
+
+    if (detectedFormat === 'benevity-raw') {
+      return {
+        contacts: await this.parseBenevityRaw(rows),
+        format: detectedFormat
+      };
+    }
+
+    if (detectedFormat === 'adhoc-raw') {
+      return {
+        contacts: await this.parseAdhocRaw(rows),
         format: detectedFormat
       };
     }
@@ -161,22 +182,91 @@ export class UploadCsvMapper {
       return 'mapped-template';
     }
 
-    const looksLikeGivingSgRaw =
-      normalizedHeaders.includes('donation reference') &&
-      normalizedHeaders.includes('donation amount') &&
-      normalizedHeaders.includes('payment method');
-
-    if (looksLikeGivingSgRaw) {
+    if (this.isGivingSgHeaderRow(firstRow) || this.looksLikeGivingSgDataRow(firstRow)) {
       return 'giving-sg-raw';
     }
 
-    const looksLikeGiveAsiaRaw = this.looksLikeGiveAsiaDataRow(firstRow);
-
-    if (looksLikeGiveAsiaRaw) {
+    if (this.looksLikeGiveAsiaDataRow(firstRow)) {
       return 'giveasia-raw';
     }
 
+    if (this.looksLikeBenevityDataRow(firstRow)) {
+      return 'benevity-raw';
+    }
+
+    if (this.looksLikeAdhocDataRow(firstRow)) {
+      return 'adhoc-raw';
+    }
+
     return 'unknown';
+  }
+
+  private static isGivingSgHeaderRow(row: string[]): boolean {
+    const normalizedHeaders = row.map((value) => this.normalizeHeader(value));
+    return (
+      normalizedHeaders.includes('donation reference') &&
+      normalizedHeaders.includes('donation amount') &&
+      normalizedHeaders.includes('payment method')
+    );
+  }
+
+  private static looksLikeGivingSgDataRow(row: string[]): boolean {
+    if (!row || row.length < 24) {
+      return false;
+    }
+
+    const donationDate = this.cleanCell(row[0]);
+    const donationReference = this.cleanCell(row[1]);
+    const amount = this.cleanCell(row[6]);
+    const paymentMethod = this.cleanCell(row[7]);
+    const status = this.cleanCell(row[22]);
+
+    const looksLikeDate = /^\d{2}\/\d{2}\/\d{4}$/.test(donationDate);
+    const looksLikeReference = /^[A-Za-z0-9/-]{6,}$/.test(donationReference);
+    const looksLikeAmount = !Number.isNaN(Number(amount));
+    const looksLikeStatus = ['FUND DISBURSED', 'COMPLETED', 'SUCCESSFUL', 'PENDING', 'CANCELLED'].includes(
+      this.normalizeLookupValue(status)
+    );
+
+    return looksLikeDate && looksLikeReference && looksLikeAmount && (!!paymentMethod || looksLikeStatus);
+  }
+
+  private static looksLikeBenevityDataRow(row: string[]): boolean {
+    if (!row || row.length < 18) {
+      return false;
+    }
+
+    const dateTime = this.cleanCell(row[2]);
+    const email = this.cleanCell(row[5]);
+    const transactionId = this.cleanCell(row[12]);
+    const frequency = this.cleanCell(row[13]);
+
+    return (
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?$/.test(dateTime) &&
+      email.includes('@') &&
+      /^[A-Za-z0-9]{8,}$/.test(transactionId) &&
+      ['ONE TIME', 'RECURRING', 'MONTHLY'].includes(this.normalizeLookupValue(frequency))
+    );
+  }
+
+  private static looksLikeAdhocDataRow(row: string[]): boolean {
+    if (!row || row.length < 16) {
+      return false;
+    }
+
+    const amount = this.cleanCell(row[11]);
+    const receiveDate = this.cleanCell(row[12]);
+    const paymentMethod = this.cleanCell(row[13]);
+    const status = this.cleanCell(row[18]);
+
+    const looksLikeDate = /^\d{2}\/\d{2}\/\d{4}$/.test(receiveDate);
+    const looksLikeAmount = !Number.isNaN(Number(amount));
+    const looksLikeStatus = ['COMPLETED', 'CANCELLED', 'PENDING', 'FAILED'].includes(this.normalizeLookupValue(status));
+    const looksLikePaymentMethod = ['CASH', 'CHEQUE', 'PAYNOW', 'BANK TRANSFER', 'CREDIT CARD'].includes(
+      this.normalizeLookupValue(paymentMethod)
+    );
+
+    return looksLikeDate && looksLikeAmount && looksLikeStatus && looksLikePaymentMethod;
   }
 
   private static looksLikeGiveAsiaDataRow(row: string[]): boolean {
@@ -190,7 +280,15 @@ export class UploadCsvMapper {
     return /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(firstCell) || platformCell.toLowerCase() === 'give.asia';
   }
 
-  private static async parseGivingSgRaw(csvText: string): Promise<ImportContact[]> {
+  private static async parseGivingSgRaw(rows: string[][], csvText: string): Promise<ImportContact[]> {
+    if (this.isGivingSgHeaderRow(rows[0] ?? [])) {
+      return this.parseGivingSgRawWithHeaders(csvText);
+    }
+
+    return this.parseGivingSgRawWithoutHeaders(rows);
+  }
+
+  private static async parseGivingSgRawWithHeaders(csvText: string): Promise<ImportContact[]> {
     const parsed = Papa.parse<Record<string, string>>(csvText, {
       header: true,
       skipEmptyLines: 'greedy'
@@ -205,75 +303,170 @@ export class UploadCsvMapper {
         return;
       }
 
-      const donationDate = this.pickValue(normalizedRow, ['Donation Date', 'Donation Date DD/MM/YYYY']);
-      const donationReference = this.pickValue(normalizedRow, ['Donation Reference']);
-      const campaignName = this.pickValue(normalizedRow, ['Campaign Name']);
-      const disbursementDate = this.pickValue(normalizedRow, ['Disbursement Batch Date', 'Disbursement Batch Date DD/MM/YYYY']);
-      const donationAmount = this.pickValue(normalizedRow, ['Donation Amount']);
-      const paymentMethod = this.pickValue(normalizedRow, ['Payment Method']);
-      const accountEmail = this.pickValue(normalizedRow, ['Account Email']);
-      const salutation = this.pickValue(normalizedRow, ['Salutation']);
-      const donorName = this.pickValue(normalizedRow, ['Donor Name']);
-      const preferredDisplayName = this.pickValue(normalizedRow, ['Preferred Display Name']);
-      const externalIdentifierRaw = this.pickValue(normalizedRow, ['Donor NRIC/FIN']);
-      const postalCode = this.pickValue(normalizedRow, ['Postal Code']);
-      const donationType = this.pickValue(normalizedRow, ['Donation Type']);
-      const transactionStatus = this.pickValue(normalizedRow, ['Transaction Status']);
-      const remarks = this.pickValue(normalizedRow, ['Remarks']);
-      const taxDeduction = this.pickValue(normalizedRow, ['TDR', 'Tax Deduction', 'Tax Deduction/FinancialType']);
-      const npoName = this.pickValue(normalizedRow, ['NPO Name']);
-      const campaignType = this.pickValue(normalizedRow, ['Campaign Type']);
+      const contact = this.createGivingSgContact(
+        {
+          donationDate: this.pickValue(normalizedRow, ['Donation Date', 'Donation Date DD/MM/YYYY']),
+          donationReference: this.pickValue(normalizedRow, ['Donation Reference']),
+          campaignName: this.pickValue(normalizedRow, ['Campaign Name']),
+          disbursementDate: this.pickValue(normalizedRow, ['Disbursement Batch Date', 'Disbursement Batch Date DD/MM/YYYY']),
+          donationAmount: this.pickValue(normalizedRow, ['Donation Amount']),
+          paymentMethod: this.pickValue(normalizedRow, ['Payment Method']),
+          accountEmail: this.pickValue(normalizedRow, ['Account Email']),
+          salutation: this.pickValue(normalizedRow, ['Salutation']),
+          donorName: this.pickValue(normalizedRow, ['Donor Name']),
+          preferredDisplayName: this.pickValue(normalizedRow, ['Preferred Display Name']),
+          externalIdentifierRaw: this.pickValue(normalizedRow, ['Donor NRIC/FIN']),
+          postalCode: this.pickValue(normalizedRow, ['Postal Code']),
+          donationType: this.pickValue(normalizedRow, ['Donation Type']),
+          transactionStatus: this.pickValue(normalizedRow, ['Transaction Status']),
+          remarks: this.pickValue(normalizedRow, ['Remarks']),
+          taxDeduction: this.pickValue(normalizedRow, ['TDR', 'Tax Deduction', 'Tax Deduction/FinancialType']),
+          npoName: this.pickValue(normalizedRow, ['NPO Name']),
+          campaignType: this.pickValue(normalizedRow, ['Campaign Type']),
+          address1: this.pickValue(normalizedRow, ['Address 1']),
+          address2: this.pickValue(normalizedRow, ['Address 2']),
+          block: this.pickValue(normalizedRow, ['Block']),
+          street: this.pickValue(normalizedRow, ['Street']),
+          buildingName: this.pickValue(normalizedRow, ['Building Name']),
+          floor: this.pickValue(normalizedRow, ['Floor']),
+          unitNumber: this.pickValue(normalizedRow, ['Unit Number'])
+        },
+        codeMaps
+      );
 
-      const address1 = this.pickValue(normalizedRow, ['Address 1']);
-      const address2 = this.pickValue(normalizedRow, ['Address 2']);
-      const block = this.pickValue(normalizedRow, ['Block']);
-      const street = this.pickValue(normalizedRow, ['Street']);
-      const buildingName = this.pickValue(normalizedRow, ['Building Name']);
-      const floor = this.pickValue(normalizedRow, ['Floor']);
-      const unitNumber = this.pickValue(normalizedRow, ['Unit Number']);
-
-      const isAnonymous = this.isAnonymousDonor(preferredDisplayName, donorName);
-      const hasRealDonorDetails = Boolean(donorName || accountEmail);
-      const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
-      const externalIdentifier = externalIdentifierRaw || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EXTERNAL_ID : '');
-      const inferredContactType = this.inferContactType(externalIdentifier);
-
-      const contact = this.createEmptyContact();
-      contact.contact_type = inferredContactType;
-      contact.prefix_id = this.mapCode(salutation, codeMaps.salutation);
-      contact.name = donorName || DEFAULT_ANONYMOUS_NAME;
-      contact.preferred_name = preferredDisplayName;
-      contact.external_identifier = externalIdentifier;
-      contact.email_primary = accountEmail || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EMAIL : '');
-      contact.phone_primary = '';
-      contact.street_address = address1 || [block, street, buildingName].filter(Boolean).join(' ').trim();
-      contact.unit_floor_number = address2 || this.buildUnitFloorNumber(floor, unitNumber);
-      contact.postal_code = postalCode;
-
-      contact.contribution.financial_type = taxDeduction;
-      contact.contribution.financial_type_id = this.mapCode(taxDeduction, codeMaps.financialType);
-      contact.contribution.contribution_status_id = this.mapCode(transactionStatus, codeMaps.contributionStatus) ?? 0;
-      contact.contribution.total_amount = this.parseAmount(donationAmount);
-      contact.contribution.source = campaignName || campaignType || npoName;
-      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, codeMaps.campaign);
-      contact.contribution.receive_date = this.normalizeDateForImport(donationDate);
-      contact.contribution.payment_instrument_id = this.mapCode(paymentMethod, codeMaps.paymentMethod);
-      contact.contribution.trxn_id = donationReference;
-      contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = externalIdentifier || null;
-      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('Giving.sg', codeMaps.platform);
-      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(donationType, codeMaps.frequency);
-      contact.contribution['Additional_Contribution_Details.Remarks'] = remarks;
-      contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
-      contact.contribution['Additional_Contribution_Details.Received_Date'] = this.normalizeDateForImport(disbursementDate);
-
-      if (!contact.contribution.total_amount && !contact.contribution.trxn_id && !contact.name) {
-        return;
+      if (contact) {
+        contacts.push(contact);
       }
-
-      contacts.push(contact);
     });
 
     return contacts;
+  }
+
+  private static async parseGivingSgRawWithoutHeaders(rows: string[][]): Promise<ImportContact[]> {
+    const codeMaps = await this.getCodeMaps();
+    const contacts: ImportContact[] = [];
+
+    rows.forEach((row) => {
+      if (!this.looksLikeGivingSgDataRow(row)) {
+        return;
+      }
+
+      const remarks = this.pickFirstNonEmpty([
+        this.cleanCell(row[24]),
+        this.cleanCell(row[25]),
+        this.cleanCell(row[26]),
+        this.cleanCell(row[27])
+      ]);
+
+      const contact = this.createGivingSgContact(
+        {
+          donationDate: this.cleanCell(row[0]),
+          donationReference: this.cleanCell(row[1]),
+          campaignName: this.cleanCell(row[3]),
+          disbursementDate: this.cleanCell(row[5]),
+          donationAmount: this.cleanCell(row[6]),
+          paymentMethod: this.cleanCell(row[7]),
+          accountEmail: this.cleanCell(row[10]),
+          salutation: this.cleanCell(row[11]),
+          donorName: this.cleanCell(row[12]),
+          preferredDisplayName: this.cleanCell(row[13]),
+          externalIdentifierRaw: this.cleanCell(row[14]),
+          postalCode: this.cleanCell(row[15]),
+          donationType: this.cleanCell(row[21]),
+          transactionStatus: this.cleanCell(row[22]),
+          remarks,
+          taxDeduction: this.cleanCell(row[9]),
+          npoName: this.cleanCell(row[2]),
+          campaignType: this.cleanCell(row[28]),
+          address1: '',
+          address2: '',
+          block: this.cleanCell(row[16]),
+          street: this.cleanCell(row[17]),
+          buildingName: this.cleanCell(row[18]),
+          floor: this.cleanCell(row[19]),
+          unitNumber: this.cleanCell(row[20])
+        },
+        codeMaps
+      );
+
+      if (contact) {
+        contacts.push(contact);
+      }
+    });
+
+    return contacts;
+  }
+
+  private static createGivingSgContact(
+    values: {
+      donationDate: string;
+      donationReference: string;
+      campaignName: string;
+      disbursementDate: string;
+      donationAmount: string;
+      paymentMethod: string;
+      accountEmail: string;
+      salutation: string;
+      donorName: string;
+      preferredDisplayName: string;
+      externalIdentifierRaw: string;
+      postalCode: string;
+      donationType: string;
+      transactionStatus: string;
+      remarks: string;
+      taxDeduction: string;
+      npoName: string;
+      campaignType: string;
+      address1: string;
+      address2: string;
+      block: string;
+      street: string;
+      buildingName: string;
+      floor: string;
+      unitNumber: string;
+    },
+    codeMaps: DynamicCodeMaps
+  ): ImportContact | null {
+    const isAnonymous = this.isAnonymousDonor(values.preferredDisplayName, values.donorName);
+    const hasRealDonorName = Boolean(values.donorName) && !isAnonymous;
+    const hasRealDonorDetails = hasRealDonorName || Boolean(values.accountEmail);
+    const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
+    const externalIdentifier = values.externalIdentifierRaw || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EXTERNAL_ID : '');
+    const inferredContactType = this.inferContactType(externalIdentifier);
+
+    const contact = this.createEmptyContact();
+    contact.contact_type = inferredContactType;
+    contact.prefix_id = this.mapCode(values.salutation, codeMaps.salutation);
+    contact.name = values.donorName || DEFAULT_ANONYMOUS_NAME;
+    contact.preferred_name = values.preferredDisplayName;
+    contact.external_identifier = externalIdentifier;
+    contact.email_primary = values.accountEmail || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EMAIL : '');
+    contact.phone_primary = '';
+    contact.street_address = values.address1 || [values.block, values.street, values.buildingName].filter(Boolean).join(' ').trim();
+    contact.unit_floor_number = values.address2 || this.buildUnitFloorNumber(values.floor, values.unitNumber);
+    contact.postal_code = values.postalCode;
+
+    contact.contribution.financial_type = values.taxDeduction;
+    contact.contribution.financial_type_id = this.mapCode(values.taxDeduction, codeMaps.financialType);
+    contact.contribution.contribution_status_id = this.mapCode(values.transactionStatus, codeMaps.contributionStatus) ?? 0;
+    contact.contribution.total_amount = this.parseAmount(values.donationAmount);
+    contact.contribution.source = values.campaignName || values.campaignType || values.npoName;
+    contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(values.campaignName, codeMaps.campaign);
+    contact.contribution.receive_date = this.normalizeDateForImport(values.donationDate);
+    contact.contribution.payment_instrument_id = this.mapCode(values.paymentMethod, codeMaps.paymentMethod);
+    contact.contribution.trxn_id = values.donationReference;
+    contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = externalIdentifier || null;
+    contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('Giving.sg', codeMaps.platform);
+    contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(values.donationType, codeMaps.frequency);
+    contact.contribution['Additional_Contribution_Details.Remarks'] = values.remarks;
+    contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
+    contact.contribution['Additional_Contribution_Details.Received_Date'] = this.normalizeDateForImport(values.disbursementDate);
+
+    if (!contact.contribution.total_amount && !contact.contribution.trxn_id && !contact.name) {
+      return null;
+    }
+
+    return contact;
   }
 
   private static async parseGiveAsiaRaw(rows: string[][]): Promise<ImportContact[]> {
@@ -293,10 +486,14 @@ export class UploadCsvMapper {
       const donorName = this.cleanCell(row[15]);
       const email = this.cleanCell(row[16]);
       const mobile = this.cleanCell(row[17]);
-      const taxDeduction = this.cleanCell(row[20]);
-      const externalIdentifier = this.cleanCell(row[21]);
-      const rawAddress = this.cleanCell(row[23]);
-      const remarks = this.cleanCell(row[25]) || this.cleanCell(row[19]);
+      const taxDeduction = this.pickGiveAsiaTaxDeduction(row);
+      const externalIdentifier = this.pickGiveAsiaExternalIdentifier(row);
+      const rawAddress = this.pickFirstNonEmpty([
+        [this.cleanCell(row[23]), this.cleanCell(row[24])].filter(Boolean).join(' '),
+        this.cleanCell(row[23]),
+        this.cleanCell(row[24])
+      ]);
+      const remarks = this.pickGiveAsiaRemarks(row, taxDeduction, externalIdentifier);
 
       const addressParts = this.extractAddressParts(rawAddress);
       const contact = this.createEmptyContact();
@@ -336,6 +533,186 @@ export class UploadCsvMapper {
     });
 
     return contacts;
+  }
+
+  private static async parseBenevityRaw(rows: string[][]): Promise<ImportContact[]> {
+    const codeMaps = await this.getCodeMaps();
+    const contacts: ImportContact[] = [];
+
+    rows.forEach((row) => {
+      if (!this.looksLikeBenevityDataRow(row)) {
+        return;
+      }
+
+      const firstName = this.cleanCell(row[3]);
+      const lastName = this.cleanCell(row[4]);
+      const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+      const receiveDate = this.normalizeDateForImport(this.cleanCell(row[2]));
+      const totalAmount = this.parseBenevityTotalAmount(row[18], row[19], row[14]);
+      const transactionId = this.cleanCell(row[12]);
+      const frequency = this.cleanCell(row[13]);
+      const remarks = this.cleanCell(row[11]);
+
+      const contact = this.createEmptyContact();
+      contact.contact_type = 'Individual';
+      contact.prefix_id = null;
+      contact.name = fullName || DEFAULT_ANONYMOUS_NAME;
+      contact.preferred_name = '';
+      contact.external_identifier = '';
+      contact.email_primary = this.cleanCell(row[5]);
+      contact.phone_primary = '';
+      contact.street_address = this.cleanCell(row[6]);
+      contact.unit_floor_number = '';
+      contact.postal_code = this.cleanCell(row[9]);
+
+      contact.contribution.financial_type = 'Non Tax Deductible Donation';
+      contact.contribution.financial_type_id = this.mapCode('Non Tax Deductible Donation', codeMaps.financialType);
+      contact.contribution.contribution_status_id = this.mapCode('Completed', codeMaps.contributionStatus) ?? 1;
+      contact.contribution.total_amount = totalAmount;
+      contact.contribution.source = '';
+      contact.contribution['Additional_Contribution_Details.Campaign'] = null;
+      contact.contribution.receive_date = receiveDate;
+      contact.contribution.payment_instrument_id = this.mapCode('Benevity', codeMaps.paymentMethod);
+      contact.contribution.trxn_id = transactionId;
+      contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = null;
+      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode('Benevity', codeMaps.platform);
+      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode(frequency, codeMaps.frequency);
+      contact.contribution['Additional_Contribution_Details.Remarks'] = remarks;
+      contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
+      contact.contribution['Additional_Contribution_Details.Received_Date'] = '';
+
+      if (!contact.contribution.total_amount && !contact.contribution.trxn_id && !contact.name) {
+        return;
+      }
+
+      contacts.push(contact);
+    });
+
+    return contacts;
+  }
+
+  private static async parseAdhocRaw(rows: string[][]): Promise<ImportContact[]> {
+    const codeMaps = await this.getCodeMaps();
+    const contacts: ImportContact[] = [];
+
+    rows.forEach((row) => {
+      if (!this.looksLikeAdhocDataRow(row)) {
+        return;
+      }
+
+      const donorName = this.cleanCell(row[1]);
+      const accountEmail = this.cleanCell(row[5]);
+      const externalIdentifierRaw = this.cleanCell(row[0]);
+      const isAnonymous = this.isAnonymousDonor('', donorName);
+      const hasRealDonorName = Boolean(donorName) && !isAnonymous;
+      const hasRealDonorDetails = hasRealDonorName || Boolean(accountEmail);
+      const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
+      const externalIdentifier = externalIdentifierRaw || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EXTERNAL_ID : '');
+
+      const contact = this.createEmptyContact();
+      contact.contact_type = this.inferContactType(externalIdentifier);
+      contact.prefix_id = null;
+      contact.name = donorName || DEFAULT_ANONYMOUS_NAME;
+      contact.preferred_name = '';
+      contact.external_identifier = externalIdentifier;
+      contact.email_primary = accountEmail || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EMAIL : '');
+      contact.phone_primary = this.cleanCell(row[6]);
+      contact.street_address = this.cleanCell(row[2]);
+      contact.unit_floor_number = this.cleanCell(row[3]);
+      contact.postal_code = this.cleanCell(row[4]);
+
+      const financialType = this.cleanCell(row[8]);
+      const donationSource = this.cleanCell(row[17]);
+      const campaignName = this.cleanCell(row[15]);
+
+      contact.contribution.financial_type = financialType;
+      contact.contribution.financial_type_id = this.mapCode(financialType, codeMaps.financialType);
+      contact.contribution.contribution_status_id = this.mapCode(this.cleanCell(row[18]), codeMaps.contributionStatus) ?? 0;
+      contact.contribution.total_amount = this.parseAmount(this.cleanCell(row[11]));
+      contact.contribution.source = donationSource;
+      contact.contribution['Additional_Contribution_Details.Campaign'] = this.mapCode(campaignName, codeMaps.campaign);
+      contact.contribution.receive_date = this.normalizeDateForImport(this.cleanCell(row[12]));
+      contact.contribution.payment_instrument_id = this.mapCode(this.cleanCell(row[13]), codeMaps.paymentMethod);
+      contact.contribution.trxn_id = this.cleanCell(row[7]);
+      contact.contribution.check_number = this.cleanCell(row[14]);
+      contact.contribution['Additional_Contribution_Details.NRIC_FIN_UEN'] = externalIdentifier || null;
+      contact.contribution['Additional_Contribution_Details.Payment_Platform'] = this.mapCode(donationSource || 'Adhoc', codeMaps.platform);
+      contact.contribution['Additional_Contribution_Details.Recurring_Donation'] = this.mapCode('ONE-TIME', codeMaps.frequency);
+      contact.contribution['Additional_Contribution_Details.Remarks'] = this.cleanCell(row[16]);
+      contact.contribution['Additional_Contribution_Details.Imported_Date'] = this.getTodayDate();
+      contact.contribution['Additional_Contribution_Details.Received_Date'] = '';
+
+      if (!contact.contribution.total_amount && !contact.contribution.trxn_id && !contact.name) {
+        return;
+      }
+
+      contacts.push(contact);
+    });
+
+    return contacts;
+  }
+
+  private static pickGiveAsiaTaxDeduction(row: string[]): string {
+    const candidates = [row[21], row[20], row[19], row[18]];
+    return this.pickFirstNonEmpty(candidates.filter((value) => this.isTaxDeductionValue(this.cleanCell(value))));
+  }
+
+  private static pickGiveAsiaExternalIdentifier(row: string[]): string {
+    const candidates = [row[22], row[21], row[23], row[24], row[20]];
+    return this.pickFirstNonEmpty(candidates.filter((value) => this.isLikelyExternalIdentifier(this.cleanCell(value))));
+  }
+
+  private static pickGiveAsiaRemarks(row: string[], taxDeduction: string, externalIdentifier: string): string {
+    const trailingRemark = this.cleanCell(row[25]);
+    if (trailingRemark) {
+      return trailingRemark;
+    }
+
+    const inlineRemarks = [this.cleanCell(row[19]), this.cleanCell(row[20])].filter(
+      (value) => value && value !== taxDeduction && value !== externalIdentifier && !this.isTaxDeductionValue(value)
+    );
+
+    return inlineRemarks.join(' ').trim();
+  }
+
+  private static parseBenevityTotalAmount(rawAmount: string | undefined, rawMatchedAmount: string | undefined, rawCurrency: string | undefined): number {
+    const amount = this.parseAmount(this.cleanCell(rawAmount));
+    const matchedAmount = this.parseAmount(this.cleanCell(rawMatchedAmount));
+    const currency = this.normalizeLookupValue(this.cleanCell(rawCurrency));
+
+    let total = amount + matchedAmount;
+    if (currency === 'USD') {
+      total = total * BENEVITY_USD_TO_SGD_RATE;
+    }
+
+    return Math.round(total * 100) / 100;
+  }
+
+  private static isTaxDeductionValue(value: string): boolean {
+    const normalized = this.normalizeLookupValue(value);
+    return ['YES', 'NO', 'TDR', 'NTDR', 'YES NOT ELIGIBLE', 'TAX DEDUCTIBLE DONATION', 'NON TAX DEDUCTIBLE DONATION'].includes(normalized);
+  }
+
+  private static isLikelyExternalIdentifier(value: string): boolean {
+    const normalized = this.cleanCell(value).toUpperCase();
+    if (!normalized) {
+      return false;
+    }
+
+    const looksLikeNricFin = /^[STFGM]\d{7}[A-Z]$/.test(normalized);
+    const looksLikeUen = /^\d{8,9}[A-Z]$/.test(normalized) || /^[A-Z]\d{9}[A-Z]$/.test(normalized);
+    return looksLikeNricFin || looksLikeUen;
+  }
+
+  private static pickFirstNonEmpty(values: Array<string | undefined>): string {
+    for (const value of values) {
+      const cleaned = this.cleanCell(value);
+      if (cleaned) {
+        return cleaned;
+      }
+    }
+
+    return '';
   }
 
   private static async getCodeMaps(): Promise<DynamicCodeMaps> {
@@ -665,7 +1042,7 @@ export class UploadCsvMapper {
       return trimmedValue.replace(/\s+/g, ' ').trim();
     }
 
-    const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/.exec(trimmedValue);
+    const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(trimmedValue);
     if (isoDateTimeMatch) {
       const [, year, month, day, hourText, minute] = isoDateTimeMatch;
       const hour = Number(hourText);
