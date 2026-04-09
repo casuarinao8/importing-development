@@ -22,7 +22,6 @@ try {
   $batchNumber = $post['batchNumber'] ?? null;
   $batchSize = $post['batchSize'] ?? null;
 
-  $taxDeductibleFinancialTypeId = 5;
   $orgSubtype = resolveContactSubtype('Organization', ['Organisation_Donor', 'Organisation_donor']);
 
   error_log("[IMPORTING] Processing " . count($contacts) . " contacts");
@@ -36,24 +35,18 @@ try {
   $phones = [];
 
   foreach ($contacts as $contact) {
-    $contribution = $contact['contribution'] ?? null;
-    //tax deductible if financial type id matches the configured value
-    $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
-
-    // Tax-deductible: always use external_id
-    if ($isTaxDeductible && !empty($contact['external_identifier'])) {
+    // Always attempt lookup by external identifier when available.
+    if (!empty($contact['external_identifier'])) {
       $externalIds[] = $contact['external_identifier'];
     }
-    // Non-tax-deductible Individual: use email and phone
-    elseif (!$isTaxDeductible && $contact['contact_type'] === 'Individual') {
-      if (!empty($contact['email_primary'])) {
-        $emails[] = strtolower($contact['email_primary']);
-      }
-      if (!empty($contact['phone_primary'])) {
-        $phones[] = $contact['phone_primary'];
-      }
+
+    // Fallback identifiers for contacts without external ID (or when ext ID is not found in DB).
+    if (!empty($contact['email_primary'])) {
+      $emails[] = strtolower($contact['email_primary']);
     }
-    // Non-tax-deductible Organization: no checking needed (will create new)
+    if (!empty($contact['phone_primary'])) {
+      $phones[] = $contact['phone_primary'];
+    }
   }
 
   // Remove duplicates
@@ -143,36 +136,37 @@ try {
   error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext/email/phone)");
 
   // Function to find existing contact based on matching rules
-  function findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId)
+  function findExistingContact($contact, $existingContactsMap)
   {
-    $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
-
-    // Tax-deductible: match by external_id
-    if ($isTaxDeductible && !empty($contact['external_identifier'])) {
+    // External identifier has highest priority when provided.
+    if (!empty($contact['external_identifier'])) {
       $key = 'ext_' . $contact['external_identifier'];
       return $existingContactsMap[$key] ?? null;
     }
 
-    // Non-tax-deductible Individual: match by email first, then phone
-    if (!$isTaxDeductible && $contact['contact_type'] === 'Individual') {
-      // Try email first
-      if (!empty($contact['email_primary'])) {
-        $key = 'email_' . strtolower($contact['email_primary']);
-        if (isset($existingContactsMap[$key])) {
-          return $existingContactsMap[$key];
-        }
-      }
-
-      // Try phone if email not found
-      if (!empty($contact['phone_primary'])) {
-        $key = 'phone_' . $contact['phone_primary'];
-        if (isset($existingContactsMap[$key])) {
-          return $existingContactsMap[$key];
+    // Email fallback (same contact type only).
+    if (!empty($contact['email_primary'])) {
+      $key = 'email_' . strtolower($contact['email_primary']);
+      if (isset($existingContactsMap[$key])) {
+        $candidate = $existingContactsMap[$key];
+        if (($candidate['contact_type'] ?? null) === ($contact['contact_type'] ?? null)) {
+          return $candidate;
         }
       }
     }
 
-    // Non-tax-deductible Organization: no matching, always create new
+    // Phone fallback (same contact type only).
+    if (!empty($contact['phone_primary'])) {
+      $key = 'phone_' . $contact['phone_primary'];
+      if (isset($existingContactsMap[$key])) {
+        $candidate = $existingContactsMap[$key];
+        if (($candidate['contact_type'] ?? null) === ($contact['contact_type'] ?? null)) {
+          return $candidate;
+        }
+      }
+    }
+
+    // No usable match found.
     return null;
   }
 
@@ -185,7 +179,7 @@ try {
     $contactSuccess = false;
 
     try {
-      $existingContact = findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId);
+      $existingContact = findExistingContact($contact, $existingContactsMap);
       $contactId = null;
 
       if ($existingContact) {

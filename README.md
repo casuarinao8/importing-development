@@ -59,7 +59,6 @@ No rebuild is needed per client. Only `config.js` changes.
 window.__APP_CONFIG__ = {
   DOMAIN: "https://clientname.socialservicesconnect.com",
   IMPORT_TITLE: "Client Data Import",
-  TEMPLATE_URL: "https://docs.google.com/spreadsheets/d/SHEET_ID/edit",
   LATEST_DONATIONS_URL: "https://clientname.socialservicesconnect.com/wp-admin/admin.php?page=CiviCRM&q=civicrm%2Fimported-date",
 };
 ```
@@ -68,7 +67,6 @@ window.__APP_CONFIG__ = {
 |---|---|
 | `DOMAIN` | The client's site URL (no trailing slash) |
 | `IMPORT_TITLE` | Page title shown on the import screen |
-| `TEMPLATE_URL` | Google Sheets link for the CSV import template |
 | `LATEST_DONATIONS_URL` | CiviCRM report URL for latest imported donations |
 
 ## Possible Questions

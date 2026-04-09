@@ -9,9 +9,6 @@ window.__APP_CONFIG__ = {
   // The page title shown on the import page
   IMPORT_TITLE: "Client Data Import",
 
-  // Google Sheets URL for the CSV import template
-  TEMPLATE_URL: "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit",
-
   // URL to the latest imported donations report in CiviCRM
   LATEST_DONATIONS_URL: "https://example.socialservicesconnect.com/wp-admin/admin.php?page=CiviCRM&q=civicrm%2Fimported-date",
 };

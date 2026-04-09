@@ -74,9 +74,3 @@ export interface APISettings {
   name: string;
   value: string | any[];
 }
-
-export interface APIImportSettings {
-  import_dedupe_rule: string;
-  import_contact_types: string[];
-  import_custom_fields: string[];
-}
