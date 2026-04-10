@@ -125,7 +125,7 @@ export default function ErrorReports() {
         </div>
 
         <Alert severity='info' className='mb-4'>
-          Showing error logs from the last 30 days. Logs older than 30 days are deleted daily at 12:00 AM Singapore time.
+          Showing error logs from the last 30 days. Logs older than 30 days are deleted whenever a portal request is made.
         </Alert>
 
         {errorMessage && (

@@ -1,6 +1,9 @@
 <?php
   require_once '../../../../wp-load.php';
   require_once '../../../../wp-content/plugins/civicrm/civicrm/civicrm.config.php';
+  require_once './import/error_reports_table.php';
+
+  importing_error_reports_run_request_cleanup();
 
   $user = wp_get_current_user();
   if (empty($user)) {
