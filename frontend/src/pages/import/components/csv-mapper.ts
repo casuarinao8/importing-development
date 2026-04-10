@@ -117,6 +117,7 @@ const BENEVITY_USD_TO_SGD_RATE = 1.3;
 
 export class UploadCsvMapper {
   private static codeMapsPromise: Promise<DynamicCodeMaps> | null = null;
+  private static readonly FORMAT_DETECTION_SAMPLE_SIZE = 50;
 
   static async parse(csvText: string): Promise<ParsedUploadCSVResult> {
     const rowParse = Papa.parse<string[]>(csvText, {
@@ -135,7 +136,7 @@ export class UploadCsvMapper {
 
     if (detectedFormat === 'giving-sg-raw') {
       return {
-        contacts: await this.parseGivingSgRaw(rows, csvText),
+        contacts: await this.parseGivingSgRaw(rows),
         format: detectedFormat
       };
     }
@@ -169,36 +170,40 @@ export class UploadCsvMapper {
   }
 
   private static detectFormat(rows: string[][]): UploadCSVFormat {
-    const firstRow = rows[0] ?? [];
-    const normalizedHeaders = firstRow.map((value) => this.normalizeHeader(value));
+    const sampleRows = rows.slice(0, this.FORMAT_DETECTION_SAMPLE_SIZE);
 
-    const looksLikeMappedTemplate =
-      normalizedHeaders.includes('contact type') &&
-      (normalizedHeaders.includes('financial type code') ||
-        normalizedHeaders.includes('payment method code') ||
-        normalizedHeaders.includes('total amount in sgd'));
-
-    if (looksLikeMappedTemplate) {
+    if (sampleRows.some((row) => this.isMappedTemplateHeaderRow(row))) {
       return 'mapped-template';
     }
 
-    if (this.isGivingSgHeaderRow(firstRow) || this.looksLikeGivingSgDataRow(firstRow)) {
+    if (sampleRows.some((row) => this.isGivingSgHeaderRow(row) || this.looksLikeGivingSgDataRow(row))) {
       return 'giving-sg-raw';
     }
 
-    if (this.looksLikeGiveAsiaDataRow(firstRow)) {
+    if (sampleRows.some((row) => this.looksLikeGiveAsiaDataRow(row))) {
       return 'giveasia-raw';
     }
 
-    if (this.looksLikeBenevityDataRow(firstRow)) {
+    if (sampleRows.some((row) => this.looksLikeBenevityDataRow(row))) {
       return 'benevity-raw';
     }
 
-    if (this.looksLikeAdhocDataRow(firstRow)) {
+    if (sampleRows.some((row) => this.looksLikeAdhocDataRow(row))) {
       return 'adhoc-raw';
     }
 
     return 'unknown';
+  }
+
+  private static isMappedTemplateHeaderRow(row: string[]): boolean {
+    const normalizedHeaders = row.map((value) => this.normalizeHeader(value));
+
+    return (
+      normalizedHeaders.includes('contact type') &&
+      (normalizedHeaders.includes('financial type code') ||
+        normalizedHeaders.includes('payment method code') ||
+        normalizedHeaders.includes('total amount in sgd'))
+    );
   }
 
   private static isGivingSgHeaderRow(row: string[]): boolean {
@@ -221,7 +226,7 @@ export class UploadCsvMapper {
     const paymentMethod = this.cleanCell(row[7]);
     const status = this.cleanCell(row[22]);
 
-    const looksLikeDate = /^\d{2}\/\d{2}\/\d{4}$/.test(donationDate);
+    const looksLikeDate = this.isDayMonthYearDate(donationDate);
     const looksLikeReference = /^[A-Za-z0-9/-]{6,}$/.test(donationReference);
     const looksLikeAmount = !Number.isNaN(Number(amount));
     const looksLikeStatus = ['FUND DISBURSED', 'COMPLETED', 'SUCCESSFUL', 'PENDING', 'CANCELLED'].includes(
@@ -280,25 +285,32 @@ export class UploadCsvMapper {
     return /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(firstCell) || platformCell.toLowerCase() === 'give.asia';
   }
 
-  private static async parseGivingSgRaw(rows: string[][], csvText: string): Promise<ImportContact[]> {
-    if (this.isGivingSgHeaderRow(rows[0] ?? [])) {
-      return this.parseGivingSgRawWithHeaders(csvText);
+  private static async parseGivingSgRaw(rows: string[][]): Promise<ImportContact[]> {
+    const headerRowIndex = this.findGivingSgHeaderRowIndex(rows);
+
+    if (headerRowIndex >= 0) {
+      return this.parseGivingSgRawWithHeaders(rows.slice(headerRowIndex));
     }
 
     return this.parseGivingSgRawWithoutHeaders(rows);
   }
 
-  private static async parseGivingSgRawWithHeaders(csvText: string): Promise<ImportContact[]> {
-    const parsed = Papa.parse<Record<string, string>>(csvText, {
-      header: true,
-      skipEmptyLines: 'greedy'
-    });
-    const codeMaps = await this.getCodeMaps();
+  private static findGivingSgHeaderRowIndex(rows: string[][]): number {
+    return rows.findIndex((row) => this.isGivingSgHeaderRow(row));
+  }
 
+  private static async parseGivingSgRawWithHeaders(rows: string[][]): Promise<ImportContact[]> {
+    if (!rows.length) {
+      return [];
+    }
+
+    const headerRow = rows[0].map((value) => this.cleanCell(value));
+    const normalizedHeaders = headerRow.map((value) => this.normalizeHeader(value));
+    const codeMaps = await this.getCodeMaps();
     const contacts: ImportContact[] = [];
 
-    parsed.data.forEach((row) => {
-      const normalizedRow = this.normalizeRecord(row);
+    rows.slice(1).forEach((row) => {
+      const normalizedRow = this.normalizeRowByHeaders(row, normalizedHeaders);
       if (!Object.values(normalizedRow).some((value) => value !== '')) {
         return;
       }
@@ -906,6 +918,20 @@ export class UploadCsvMapper {
     return normalized;
   }
 
+  private static normalizeRowByHeaders(row: string[], normalizedHeaders: string[]): Record<string, string> {
+    const normalized: Record<string, string> = {};
+
+    normalizedHeaders.forEach((header, index) => {
+      if (!header || header in normalized) {
+        return;
+      }
+
+      normalized[header] = this.cleanCell(row[index]);
+    });
+
+    return normalized;
+  }
+
   private static pickValue(normalizedRow: Record<string, string>, aliases: string[]): string {
     for (const alias of aliases) {
       const normalizedAlias = this.normalizeHeader(alias);
@@ -942,6 +968,19 @@ export class UploadCsvMapper {
       .replace(/\s+/g, ' ')
       .replace(/[^A-Z0-9 ]/g, '')
       .trim();
+  }
+
+  private static isDayMonthYearDate(value: string): boolean {
+    return /^\d{2}\/\d{2}\/(?:\d{2}|\d{4})$/.test(this.cleanCell(value));
+  }
+
+  private static expandTwoDigitYear(value: string): number {
+    const year = Number(value);
+    if (Number.isNaN(year)) {
+      return 0;
+    }
+
+    return year >= 70 ? 1900 + year : 2000 + year;
   }
 
   private static mapCode(rawValue: string, map: Record<string, number>): number | null {
@@ -1040,6 +1079,18 @@ export class UploadCsvMapper {
     const standardDateMatch = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+\d{1,2}:\d{2}\s*(?:AM|PM))?$/i.exec(trimmedValue);
     if (standardDateMatch) {
       return trimmedValue.replace(/\s+/g, ' ').trim();
+    }
+
+    const shortYearDateMatch = /^(\d{2})\/(\d{2})\/(\d{2})(?:\s+(\d{1,2}:\d{2}\s*(?:AM|PM)))?$/i.exec(trimmedValue);
+    if (shortYearDateMatch) {
+      const [, day, month, yearText, timeText] = shortYearDateMatch;
+      const expandedYear = this.expandTwoDigitYear(yearText);
+      if (!expandedYear) {
+        return trimmedValue;
+      }
+
+      const normalizedTime = timeText ? timeText.replace(/\s+/g, ' ').trim().toUpperCase() : '';
+      return normalizedTime ? `${day}/${month}/${expandedYear} ${normalizedTime}` : `${day}/${month}/${expandedYear}`;
     }
 
     const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(trimmedValue);
