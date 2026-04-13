@@ -19,15 +19,15 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
   const getFormatLabel = (format: UploadCSVFormat): string => {
     switch (format) {
       case 'mapped-template':
-        return 'Mapped template CSV';
+        return 'Mapped format';
       case 'giving-sg-raw':
-        return 'giving.sg raw CSV';
+        return 'Giving.sg raw format';
       case 'giveasia-raw':
-        return 'GiveAsia raw CSV';
+        return 'GiveAsia raw format';
       case 'benevity-raw':
-        return 'Benevity raw CSV';
+        return 'Benevity raw format';
       case 'adhoc-raw':
-        return 'Adhoc raw CSV';
+        return 'Adhoc raw format';
       default:
         return 'Unknown format';
     }

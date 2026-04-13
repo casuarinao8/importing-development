@@ -428,75 +428,164 @@ try {
   $importedContributions = [];
 
   if (!empty($contributionRecords)) {
-    try {
-      error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
-      $contributionResults = \Civi\Api4\Contribution::save(false)
-        ->setRecords($contributionRecords)
-        ->execute();
+    $filteredContributionRecords = [];
+    $filteredContactContributionMap = [];
+    $seenTransactionIds = [];
 
-      foreach ($contributionResults as $idx => $contributionResult) {
-        $contactId = $contactContributionMap[$idx]['contact_id'];
-        $contributionId = $contributionResult['id'];
-        error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+    foreach ($contributionRecords as $idx => $record) {
+      $trxnId = trim((string)($record['trxn_id'] ?? ''));
+      $meta = $contactContributionMap[$idx] ?? [];
 
-        $importedContributions[] = [
-          'contribution_id' => $contributionId,
-          'contact_id' => $contactId,
-          'name' => $contactContributionMap[$idx]['name'],
-          'row' => $contactContributionMap[$idx]['row'],
-          'financial_type' => $contactContributionMap[$idx]['financial_type'],
-          'total_amount' => $contributionResult['total_amount'],
-          'receive_date' => $contactContributionMap[$idx]['receive_date'],
-          'source' => $contactContributionMap[$idx]['source'],
-          'trxn_id' => $contactContributionMap[$idx]['trxn_id'],
-          'campaign_name' => $contactContributionMap[$idx]['campaign_name'],
-          'platform' => $contactContributionMap[$idx]['platform'],
-          'frequency' => $contactContributionMap[$idx]['frequency'],
-          'remarks' => $contactContributionMap[$idx]['remarks'],
-          'imported_date' => $contactContributionMap[$idx]['imported_date'],
-          'received_date' => $contactContributionMap[$idx]['received_date']
+      // Skip later duplicates in the same import batch to avoid failing all saves.
+      if ($trxnId !== '' && isset($seenTransactionIds[$trxnId])) {
+        $firstRow = $seenTransactionIds[$trxnId]['row'] ?? 'unknown';
+        $currentRow = $meta['row'] ?? 'unknown';
+
+        error_log("[IMPORTING] Row " . $currentRow . ": Duplicate trxn_id within import batch skipped (trxn_id: " . $trxnId . ", first seen at row " . $firstRow . ")");
+
+        $errors[] = [
+          'row' => is_numeric($currentRow) ? (int)$currentRow : null,
+          'field' => 'trxn_id',
+          'message' => "Contribution not imported at row $currentRow: duplicate transaction ID '$trxnId' already used at row $firstRow in this file."
         ];
-
-        // Link contribution to contact records
-        foreach ($newContacts as &$nc) {
-          if ($nc['contact_id'] == $contactId) {
-            $nc['contribution_id'] = $contributionId;
-            break;
-          }
-        }
-        unset($nc);
-
-        foreach ($updatedContacts as &$uc) {
-          if ($uc['contact_id'] == $contactId) {
-            $uc['contribution_id'] = $contributionId;
-            break;
-          }
-        }
-        unset($uc);
+        continue;
       }
 
-    } catch (\Throwable $e) {
-      $errorMessage = $e->getMessage();
-      error_log("[IMPORTING] Bulk contribution save failed (" . get_class($e) . "): " . $errorMessage);
-
-      $actualBatchSize = count($contacts);
-      $minRow = $batchNumber ? (($batchNumber - 1) * $batchSize) + 1 : null;
-      $maxRow = $batchNumber ? $minRow + $actualBatchSize - 1 : null;
-
-      if ($minRow !== null && $maxRow !== null) {
-        $rowRange = ($minRow == $maxRow) ? "row $minRow" : "rows $minRow to $maxRow";
-      } else {
-        $rowRange = "unknown rows";
-        $minRow = null;
-        $maxRow = null;
+      if ($trxnId !== '') {
+        $seenTransactionIds[$trxnId] = [
+          'row' => $meta['row'] ?? null
+        ];
       }
 
-      $errors[] = [
-        'row' => $minRow,
-        'row_end' => $maxRow,
-        'field' => 'contribution',
-        'message' => "Contribution import failed for $rowRange. Error: $errorMessage"
-      ];
+      $filteredContributionRecords[] = $record;
+      $filteredContactContributionMap[] = $meta;
+    }
+
+    $contributionRecords = $filteredContributionRecords;
+    $contactContributionMap = $filteredContactContributionMap;
+
+    if (empty($contributionRecords)) {
+      error_log("[IMPORTING] No contributions left to import after duplicate trxn_id filtering");
+    } else {
+      try {
+        error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
+        $contributionResults = \Civi\Api4\Contribution::save(false)
+          ->setRecords($contributionRecords)
+          ->execute();
+
+        foreach ($contributionResults as $idx => $contributionResult) {
+          $contactId = $contactContributionMap[$idx]['contact_id'];
+          $contributionId = $contributionResult['id'];
+          error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+
+          $importedContributions[] = [
+            'contribution_id' => $contributionId,
+            'contact_id' => $contactId,
+            'name' => $contactContributionMap[$idx]['name'],
+            'row' => $contactContributionMap[$idx]['row'],
+            'financial_type' => $contactContributionMap[$idx]['financial_type'],
+            'total_amount' => $contributionResult['total_amount'],
+            'receive_date' => $contactContributionMap[$idx]['receive_date'],
+            'source' => $contactContributionMap[$idx]['source'],
+            'trxn_id' => $contactContributionMap[$idx]['trxn_id'],
+            'campaign_name' => $contactContributionMap[$idx]['campaign_name'],
+            'platform' => $contactContributionMap[$idx]['platform'],
+            'frequency' => $contactContributionMap[$idx]['frequency'],
+            'remarks' => $contactContributionMap[$idx]['remarks'],
+            'imported_date' => $contactContributionMap[$idx]['imported_date'],
+            'received_date' => $contactContributionMap[$idx]['received_date']
+          ];
+
+          // Link contribution to contact records
+          foreach ($newContacts as &$nc) {
+            if ($nc['contact_id'] == $contactId) {
+              $nc['contribution_id'] = $contributionId;
+              break;
+            }
+          }
+          unset($nc);
+
+          foreach ($updatedContacts as &$uc) {
+            if ($uc['contact_id'] == $contactId) {
+              $uc['contribution_id'] = $contributionId;
+              break;
+            }
+          }
+          unset($uc);
+        }
+
+      } catch (\Throwable $e) {
+        $errorMessage = $e->getMessage();
+        error_log("[IMPORTING] Bulk contribution save failed (" . get_class($e) . "): " . $errorMessage . ". Retrying each contribution individually.");
+
+        foreach ($contributionRecords as $idx => $record) {
+          $meta = $contactContributionMap[$idx] ?? [];
+
+          try {
+            $singleResult = \Civi\Api4\Contribution::save(false)
+              ->setRecords([$record])
+              ->execute();
+
+            $contributionResult = $singleResult[0] ?? null;
+            if (!$contributionResult) {
+              throw new Exception('No contribution result returned from API4 save');
+            }
+
+            $contactId = $meta['contact_id'] ?? null;
+            $contributionId = $contributionResult['id'];
+
+            error_log("[IMPORTING] Row " . ($meta['row'] ?? 'unknown') . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($meta['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+
+            $importedContributions[] = [
+              'contribution_id' => $contributionId,
+              'contact_id' => $contactId,
+              'name' => $meta['name'] ?? '',
+              'row' => $meta['row'] ?? null,
+              'financial_type' => $meta['financial_type'] ?? '',
+              'total_amount' => $contributionResult['total_amount'],
+              'receive_date' => $meta['receive_date'] ?? '',
+              'source' => $meta['source'] ?? '',
+              'trxn_id' => $meta['trxn_id'] ?? '',
+              'campaign_name' => $meta['campaign_name'] ?? '',
+              'platform' => $meta['platform'] ?? '',
+              'frequency' => $meta['frequency'] ?? '',
+              'remarks' => $meta['remarks'] ?? '',
+              'imported_date' => $meta['imported_date'] ?? '',
+              'received_date' => $meta['received_date'] ?? ''
+            ];
+
+            // Link contribution to contact records
+            foreach ($newContacts as &$nc) {
+              if ($nc['contact_id'] == $contactId) {
+                $nc['contribution_id'] = $contributionId;
+                break;
+              }
+            }
+            unset($nc);
+
+            foreach ($updatedContacts as &$uc) {
+              if ($uc['contact_id'] == $contactId) {
+                $uc['contribution_id'] = $contributionId;
+                break;
+              }
+            }
+            unset($uc);
+
+          } catch (\Throwable $singleError) {
+            $row = $meta['row'] ?? null;
+            $rowMessage = $row ? "row $row" : 'unknown row';
+            $singleErrorMessage = $singleError->getMessage();
+
+            error_log("[IMPORTING] Contribution import failed at " . $rowMessage . " (" . get_class($singleError) . "): " . $singleErrorMessage);
+
+            $errors[] = [
+              'row' => $row,
+              'field' => 'contribution',
+              'message' => "Contribution import failed at $rowMessage. Error: $singleErrorMessage"
+            ];
+          }
+        }
+      }
     }
   }
 
