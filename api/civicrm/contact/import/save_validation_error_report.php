@@ -10,6 +10,12 @@ if (empty($user)) {
   exit;
 }
 
+if (!importing_error_reports_user_can_access()) {
+  http_response_code(403);
+  echo json_encode(['error' => 'User does not have permission to save error reports']);
+  exit;
+}
+
 try {
   $post = json_decode(file_get_contents('php://input'), true);
 
@@ -93,8 +99,8 @@ function normalizeValidationErrorEntry($error)
         'total_amount' => $contribution['total_amount'] ?? null,
         'receive_date' => $contribution['receive_date'] ?? null,
         'financial_type' => $contribution['financial_type'] ?? null,
-        'imported_date' => $contribution['imported_date'] ?? null,
-        'received_date' => $contribution['received_date'] ?? null,
+        'imported_date' => $contribution['imported_date'] ?? ($contribution['Additional_Contribution_Details.Imported_Date'] ?? null),
+        'received_date' => $contribution['received_date'] ?? ($contribution['Additional_Contribution_Details.Received_Date'] ?? null),
       ];
     }
   }

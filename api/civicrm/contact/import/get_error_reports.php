@@ -10,6 +10,12 @@ if (empty($user)) {
   exit;
 }
 
+if (!importing_error_reports_user_can_access()) {
+  http_response_code(403);
+  echo json_encode(['error' => 'User does not have permission to view error reports']);
+  exit;
+}
+
 $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 20;
 $limit = max(1, min(100, $limit));
 

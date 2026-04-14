@@ -20,6 +20,10 @@ if (!defined('IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK')) {
   define('IMPORTING_ERROR_REPORTS_DAILY_CLEANUP_HOOK', 'importing_error_reports_daily_cleanup');
 }
 
+if (!defined('IMPORTING_ERROR_REPORTS_REQUIRED_CAPABILITY')) {
+  define('IMPORTING_ERROR_REPORTS_REQUIRED_CAPABILITY', 'read');
+}
+
 
 function importing_error_reports_table_name()
 {
@@ -29,6 +33,13 @@ function importing_error_reports_table_name()
 
 function importing_error_reports_ensure_table()
 {
+  static $ensured = false;
+
+  if ($ensured) {
+    return;
+  }
+  $ensured = true;
+
   global $wpdb;
 
   $table = importing_error_reports_table_name();
@@ -365,13 +376,12 @@ function importing_error_reports_fetch_reports($limit = 20)
   $limit = max(1, min(100, (int) $limit));
   $cutoffDb = importing_error_reports_cutoff_db_datetime();
 
-  $runRows = $wpdb->get_results(
+  $rows = $wpdb->get_results(
     $wpdb->prepare(
-      "SELECT import_run_id, MAX(updated_at) AS latest_updated
+      "SELECT *
       FROM `{$table}`
       WHERE created_at >= %s
-      GROUP BY import_run_id
-      ORDER BY latest_updated DESC
+      ORDER BY updated_at DESC, id DESC
       LIMIT %d",
       $cutoffDb,
       $limit
@@ -379,24 +389,50 @@ function importing_error_reports_fetch_reports($limit = 20)
     ARRAY_A
   );
 
-  if (empty($runRows)) {
+  if (empty($rows)) {
     return [];
   }
 
   $reports = [];
-  foreach ($runRows as $runRow) {
-    $runId = (string) ($runRow['import_run_id'] ?? '');
-    if ($runId === '') {
+  $seenRunIds = [];
+  foreach ($rows as $row) {
+    $runId = isset($row['import_run_id']) ? (string) $row['import_run_id'] : '';
+    if ($runId === '' || isset($seenRunIds[$runId])) {
       continue;
     }
 
-    $report = importing_error_reports_fetch_report_by_run_id($runId);
+    $seenRunIds[$runId] = true;
+    $report = importing_error_reports_rows_to_report([$row]);
     if ($report !== null) {
       $reports[] = $report;
     }
   }
 
   return $reports;
+}
+
+
+function importing_error_reports_required_capability()
+{
+  $capability = IMPORTING_ERROR_REPORTS_REQUIRED_CAPABILITY;
+
+  if (function_exists('apply_filters')) {
+    $capability = apply_filters('importing_error_reports_required_capability', $capability);
+  }
+
+  return is_string($capability) ? $capability : '';
+}
+
+
+function importing_error_reports_user_can_access()
+{
+  $requiredCapability = importing_error_reports_required_capability();
+
+  if ($requiredCapability === '') {
+    return true;
+  }
+
+  return current_user_can($requiredCapability);
 }
 
 

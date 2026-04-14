@@ -635,8 +635,8 @@ function normalizeImportErrorEntry($error)
         'total_amount' => $contribution['total_amount'] ?? null,
         'receive_date' => $contribution['receive_date'] ?? null,
         'financial_type' => $contribution['financial_type'] ?? null,
-        'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date'] ?? null,
-        'received_date' => $contribution['Additional_Contribution_Details.Received_Date'] ?? null,
+        'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date'] ?? ($contribution['imported_date'] ?? null),
+        'received_date' => $contribution['Additional_Contribution_Details.Received_Date'] ?? ($contribution['received_date'] ?? null),
       ];
     }
   }

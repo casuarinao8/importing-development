@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -35,10 +35,6 @@ export default function ErrorReports() {
   const [selectedReport, setSelectedReport] = useState<APIImportErrorReport | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
 
-  useEffect(() => {
-    loadReports();
-  }, []);
-
   const formatDateTime = (value?: string) => {
     if (!value) return '-';
 
@@ -47,7 +43,31 @@ export default function ErrorReports() {
     return date.toLocaleString('en-GB');
   };
 
-  const loadReports = async () => {
+  const formatNullableCount = (value?: number | null) => {
+    if (value === null || value === undefined) {
+      return '-';
+    }
+
+    return value.toLocaleString('en-GB');
+  };
+
+  const formatSource = (source?: string) => {
+    if (!source) {
+      return '-';
+    }
+
+    if (source === 'pre_import_validation') {
+      return 'Pre-Import Validation';
+    }
+
+    if (source === 'import_runtime') {
+      return 'Import Runtime';
+    }
+
+    return source;
+  };
+
+  const loadReports = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
 
@@ -60,7 +80,11 @@ export default function ErrorReports() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadReports();
+  }, [loadReports]);
 
   const handleViewReport = async (runId: string) => {
     setOpen(true);
@@ -84,7 +108,13 @@ export default function ErrorReports() {
     return report.errors.map((item, index) => ({
       'No.': index + 1,
       'Import Run ID': report.import_run_id,
+      'Source': formatSource(report.source),
       'Saved At': formatDateTime(report.updated_at),
+      'File Name': report.summary.file_name ?? '',
+      'File Size': report.summary.file_size ?? '',
+      'Total Records': report.summary.total_records ?? '',
+      'Valid Records': report.summary.valid_records ?? '',
+      'Review Records': report.summary.review_records ?? '',
       'Row Start': item.row ?? '',
       'Row End': item.row_end ?? '',
       'Field': item.field ?? '',
@@ -147,6 +177,7 @@ export default function ErrorReports() {
                 <TableRow>
                   <TableCell><strong>Updated At</strong></TableCell>
                   <TableCell><strong>Run ID</strong></TableCell>
+                  <TableCell><strong>Source</strong></TableCell>
                   <TableCell align='right'><strong>Errors</strong></TableCell>
                   <TableCell><strong>Actions</strong></TableCell>
                 </TableRow>
@@ -156,6 +187,7 @@ export default function ErrorReports() {
                   <TableRow key={report.import_run_id}>
                     <TableCell>{formatDateTime(report.updated_at)}</TableCell>
                     <TableCell>{report.import_run_id}</TableCell>
+                    <TableCell>{formatSource(report.source)}</TableCell>
                     <TableCell align='right'>
                       <Chip
                         size='small'
@@ -206,6 +238,16 @@ export default function ErrorReports() {
                 </Typography>
                 <Typography variant='body2'>
                   <strong>Updated:</strong> {formatDateTime(selectedReport.updated_at)}
+                </Typography>
+                <Typography variant='body2'>
+                  <strong>Source:</strong> {formatSource(selectedReport.source)}
+                </Typography>
+                <Typography variant='body2'>
+                  <strong>File:</strong> {selectedReport.summary.file_name ?? '-'}
+                  {selectedReport.summary.file_size ? ` (${selectedReport.summary.file_size})` : ''}
+                </Typography>
+                <Typography variant='body2'>
+                  <strong>Summary:</strong> {formatNullableCount(selectedReport.summary.total_records)} total, {formatNullableCount(selectedReport.summary.valid_records)} valid, {formatNullableCount(selectedReport.summary.review_records)} review
                 </Typography>
                 <Typography variant='body2'>
                   <strong>Totals:</strong> {selectedReport.totals.contacts_processed} contacts, {selectedReport.totals.errors} errors

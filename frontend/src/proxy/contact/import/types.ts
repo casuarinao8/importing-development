@@ -94,6 +94,14 @@ export interface APIImportErrorReportTotals {
   errors: number;
 }
 
+export interface APIImportErrorReportSummary {
+  total_records: number | null;
+  valid_records: number | null;
+  review_records: number | null;
+  file_name: string | null;
+  file_size: string | null;
+}
+
 export interface APIImportErrorReportBatch {
   batch_number: number | null;
   batch_size: number | null;
@@ -135,6 +143,8 @@ export interface APIImportErrorReport {
   import_run_id: string;
   created_at: string;
   updated_at: string;
+  source: string;
+  summary: APIImportErrorReportSummary;
   saved_by: APIImportErrorReportUser;
   totals: APIImportErrorReportTotals;
   batches: APIImportErrorReportBatch[];
