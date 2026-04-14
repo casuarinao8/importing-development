@@ -52,7 +52,7 @@ Add new env vars to [frontend/src/vite-env.d.ts](frontend/src/vite-env.d.ts) for
 // proxy/contact/index.ts
 export default class ContactManager {
   private static route = `${import.meta.env.VITE_DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact`;
-  
+
   static async getSelf() {
     const response = await axios.get<APIContact>(`${this.route}/get_self.php`);
     return response.data;
@@ -127,7 +127,7 @@ Access in code via [custom-fields proxy](frontend/src/proxy/custom-fields/).
 Primary file: [import_new_logic.php](api/civicrm/contact/import/import_new_logic.php)
 - Contact matching rules at lines ~35-55
 - Validation logic in [validation-utils.ts](frontend/src/pages/import/preview/components/validation-utils.ts)
-- Settings persistence: [get_import_settings.php](api/civicrm/contact/import/get_import_settings.php) / [set_import_settings.php](api/civicrm/contact/import/set_import_settings.php)
+- Setting lookup endpoint: [get_setting_by_name.php](api/civicrm/contact/import/get_setting_by_name.php) (legacy import settings endpoints were removed)
 
 ### Adding Validation Rules
 
