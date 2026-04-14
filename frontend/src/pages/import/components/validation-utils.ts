@@ -223,12 +223,12 @@ export class ContactValidator {
   }
 
   private static convertToISO(dateStr: string): string {
-    // dd/mm/yyyy with optional time (HH:MM AM/PM)
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+\d{1,2}:\d{2}\s+(?:AM|PM))?$/i.exec(dateStr.trim());
+    // d/m/yyyy or dd/mm/yyyy with optional time (stripped)
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(dateStr.trim());
     if (!match) return ''; // invalid format
 
     const [_, dd, mm, yyyy] = match;
-    return `${yyyy}-${mm}-${dd}`;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
   }
 
   private static safeToNumber(value: string): number | string {
