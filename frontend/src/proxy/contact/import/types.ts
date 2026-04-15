@@ -94,6 +94,15 @@ export interface APIImportErrorReportTotals {
   errors: number;
 }
 
+export interface APIImportErrorReportListItem {
+  import_run_id: string;
+  updated_at: string;
+  source: string;
+  totals: {
+    errors: number;
+  };
+}
+
 export interface APIImportErrorReportSummary {
   total_records: number | null;
   valid_records: number | null;

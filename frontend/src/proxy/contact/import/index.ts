@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportSettings, APISettings, APISaveValidationErrorReportPayload } from './types';
+import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APIImportSettings, APISettings, APISaveValidationErrorReportPayload } from './types';
 import { config } from '../../../utils/config';
 
 export default class ImportManager {
@@ -58,7 +58,7 @@ export default class ImportManager {
 	}
 
   static async getErrorReports(limit = 20) {
-    const response = await axios.get<APIImportErrorReport[]>(`${this.route}/get_error_reports.php?limit=${limit}`);
+    const response = await axios.get<APIImportErrorReportListItem[]>(`${this.route}/get_error_reports.php?limit=${limit}`);
     return response.data;
   }
 

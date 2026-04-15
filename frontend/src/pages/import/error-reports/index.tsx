@@ -23,17 +23,18 @@ import { ArrowBack, Download, Refresh, Visibility } from '@mui/icons-material';
 import Papa from 'papaparse';
 import Wrapper from '../../../components/wrapper';
 import { Proxy } from '../../../proxy';
-import { APIImportErrorReport } from '../../../proxy/contact/import/types';
+import { APIImportErrorReport, APIImportErrorReportListItem } from '../../../proxy/contact/import/types';
 import { downloadCSV } from '../../../utils/downloadCSV';
 
 export default function ErrorReports() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [reports, setReports] = useState<APIImportErrorReport[]>([]);
+  const [reports, setReports] = useState<APIImportErrorReportListItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<APIImportErrorReport | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
 
   const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -139,6 +140,21 @@ export default function ErrorReports() {
     downloadCSV(`\uFEFF${csv}`, fileName);
   };
 
+  const handleDownloadReportByRunId = async (runId: string) => {
+    setDownloadingRunId(runId);
+    setErrorMessage(null);
+
+    try {
+      const report = await Proxy.Contact.Import.getErrorReportByRunId(runId);
+      handleDownloadReport(report);
+    } catch (error) {
+      console.error('Failed to download report CSV:', error);
+      setErrorMessage('Failed to download report CSV. Please try again.');
+    } finally {
+      setDownloadingRunId(null);
+    }
+  };
+
   return (
     <Wrapper loading={loading}>
       <div className='max-w-[1200px] mx-auto py-4 px-4 h-full'>
@@ -209,9 +225,10 @@ export default function ErrorReports() {
                           size='small'
                           variant='contained'
                           startIcon={<Download />}
-                          onClick={() => handleDownloadReport(report)}
+                          onClick={() => void handleDownloadReportByRunId(report.import_run_id)}
+                          disabled={downloadingRunId === report.import_run_id}
                         >
-                          CSV
+                          {downloadingRunId === report.import_run_id ? 'Preparing...' : 'CSV'}
                         </Button>
                       </div>
                     </TableCell>

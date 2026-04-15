@@ -378,7 +378,7 @@ function importing_error_reports_fetch_reports($limit = 20)
 
   $rows = $wpdb->get_results(
     $wpdb->prepare(
-      "SELECT *
+      "SELECT import_run_id, source, errors_count, updated_at
       FROM `{$table}`
       WHERE created_at >= %s
       ORDER BY updated_at DESC, id DESC
@@ -402,10 +402,14 @@ function importing_error_reports_fetch_reports($limit = 20)
     }
 
     $seenRunIds[$runId] = true;
-    $report = importing_error_reports_rows_to_report([$row]);
-    if ($report !== null) {
-      $reports[] = $report;
-    }
+    $reports[] = [
+      'import_run_id' => $runId,
+      'updated_at' => importing_error_reports_db_to_iso($row['updated_at'] ?? null),
+      'source' => !empty($row['source']) ? (string) $row['source'] : 'import_runtime',
+      'totals' => [
+        'errors' => max(0, (int) ($row['errors_count'] ?? 0)),
+      ],
+    ];
   }
 
   return $reports;
