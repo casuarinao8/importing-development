@@ -48,6 +48,7 @@ function importing_error_reports_ensure_table()
   $sql = "CREATE TABLE IF NOT EXISTS `{$table}` (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     import_run_id VARCHAR(100) NOT NULL,
+    linked_run_id VARCHAR(100) NULL,
     source VARCHAR(64) NULL,
     total_records INT NULL,
     valid_records INT NULL,
@@ -68,6 +69,7 @@ function importing_error_reports_ensure_table()
     updated_at DATETIME NULL,
     PRIMARY KEY (id),
     KEY idx_import_run (import_run_id),
+    KEY idx_linked_run (linked_run_id),
     KEY idx_updated_at (updated_at)
   ) {$charsetCollate}";
 
@@ -79,7 +81,8 @@ function importing_error_reports_ensure_table()
   }
 
   $requiredColumns = [
-    'source' => "ALTER TABLE `{$table}` ADD COLUMN source VARCHAR(64) NULL AFTER import_run_id",
+    'linked_run_id' => "ALTER TABLE `{$table}` ADD COLUMN linked_run_id VARCHAR(100) NULL AFTER import_run_id",
+    'source' => "ALTER TABLE `{$table}` ADD COLUMN source VARCHAR(64) NULL AFTER linked_run_id",
     'total_records' => "ALTER TABLE `{$table}` ADD COLUMN total_records INT NULL AFTER source",
     'valid_records' => "ALTER TABLE `{$table}` ADD COLUMN valid_records INT NULL AFTER total_records",
     'review_records' => "ALTER TABLE `{$table}` ADD COLUMN review_records INT NULL AFTER valid_records",
@@ -108,6 +111,7 @@ function importing_error_reports_ensure_table()
   $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}`", ARRAY_A);
   $hasImportRunIndex = false;
   $hasUniqueImportRunIndex = false;
+  $hasLinkedRunIndex = false;
   $hasUpdatedAtIndex = false;
 
   if (is_array($indexes)) {
@@ -118,6 +122,9 @@ function importing_error_reports_ensure_table()
       if (($index['Column_name'] ?? '') === 'import_run_id' && (int) ($index['Non_unique'] ?? 1) === 0) {
         $hasUniqueImportRunIndex = true;
       }
+      if (($index['Key_name'] ?? '') === 'idx_linked_run') {
+        $hasLinkedRunIndex = true;
+      }
       if (($index['Key_name'] ?? '') === 'idx_updated_at') {
         $hasUpdatedAtIndex = true;
       }
@@ -126,6 +133,9 @@ function importing_error_reports_ensure_table()
 
   if (!$hasImportRunIndex) {
     $wpdb->query("ALTER TABLE `{$table}` ADD INDEX idx_import_run (import_run_id)");
+  }
+  if (!$hasLinkedRunIndex) {
+    $wpdb->query("ALTER TABLE `{$table}` ADD INDEX idx_linked_run (linked_run_id)");
   }
   if (!$hasUpdatedAtIndex) {
     $wpdb->query("ALTER TABLE `{$table}` ADD INDEX idx_updated_at (updated_at)");
@@ -193,6 +203,7 @@ function importing_error_reports_compact_duplicate_runs($table)
 
       $data = [
         'import_run_id' => $runId,
+        'linked_run_id' => importing_error_reports_nullable_string($report['linked_run_id'] ?? null, 100),
         'source' => importing_error_reports_nullable_string($report['source'] ?? null, 64),
         'total_records' => importing_error_reports_nullable_int($report['summary']['total_records'] ?? null),
         'valid_records' => importing_error_reports_nullable_int($report['summary']['valid_records'] ?? null),
@@ -250,6 +261,12 @@ function importing_error_reports_upsert_rows($importRunId, array $errors, array 
   $source = isset($context['source']) ? sanitize_key((string) $context['source']) : null;
   if (empty($source)) {
     $source = !empty($report['source']) ? (string) $report['source'] : 'import_runtime';
+  }
+
+  $linkedRunId = importing_error_reports_nullable_string($context['linked_run_id'] ?? null, 100);
+  if ($linkedRunId === null) {
+    $existingLinkedRunId = importing_error_reports_nullable_string($report['linked_run_id'] ?? null, 100);
+    $linkedRunId = $existingLinkedRunId !== null ? $existingLinkedRunId : $importRunId;
   }
 
   $seen = [];
@@ -313,6 +330,7 @@ function importing_error_reports_upsert_rows($importRunId, array $errors, array 
   $report['totals'] = importing_error_reports_merge_totals($report['totals'], $context, count($report['errors']));
 
   $report['source'] = $source;
+  $report['linked_run_id'] = $linkedRunId;
   $report['saved_by'] = [
     'user_id' => (int) ($user->ID ?? 0),
     'user_login' => (string) ($user->user_login ?? ''),
@@ -323,6 +341,7 @@ function importing_error_reports_upsert_rows($importRunId, array $errors, array 
 
   $data = [
     'import_run_id' => $importRunId,
+    'linked_run_id' => importing_error_reports_nullable_string($report['linked_run_id'] ?? null, 100),
     'source' => $report['source'],
     'total_records' => importing_error_reports_nullable_int($report['summary']['total_records'] ?? null),
     'valid_records' => importing_error_reports_nullable_int($report['summary']['valid_records'] ?? null),
@@ -378,7 +397,7 @@ function importing_error_reports_fetch_reports($limit = 20)
 
   $rows = $wpdb->get_results(
     $wpdb->prepare(
-      "SELECT import_run_id, source, errors_count, updated_at
+      "SELECT import_run_id, linked_run_id, source, errors_count, updated_at
       FROM `{$table}`
       WHERE created_at >= %s
       ORDER BY updated_at DESC, id DESC
@@ -401,9 +420,15 @@ function importing_error_reports_fetch_reports($limit = 20)
       continue;
     }
 
+    $linkedRunId = importing_error_reports_nullable_string($row['linked_run_id'] ?? null, 100);
+    if ($linkedRunId === null) {
+      $linkedRunId = $runId;
+    }
+
     $seenRunIds[$runId] = true;
     $reports[] = [
       'import_run_id' => $runId,
+      'linked_run_id' => $linkedRunId,
       'updated_at' => importing_error_reports_db_to_iso($row['updated_at'] ?? null),
       'source' => !empty($row['source']) ? (string) $row['source'] : 'import_runtime',
       'totals' => [
@@ -516,6 +541,8 @@ function importing_error_reports_rows_to_report(array $rows)
     if ($maxUpdated === null || ($updatedAt !== '' && $updatedAt > $maxUpdated)) {
       $maxUpdated = $updatedAt;
       $report['source'] = !empty($row['source']) ? (string) $row['source'] : $report['source'];
+      $rowLinkedRunId = importing_error_reports_nullable_string($row['linked_run_id'] ?? null, 100);
+      $report['linked_run_id'] = $rowLinkedRunId !== null ? $rowLinkedRunId : $runId;
       $report['saved_by'] = [
         'user_id' => (int) ($row['saved_by_user_id'] ?? 0),
         'user_login' => (string) ($row['saved_by_user_login'] ?? ''),
@@ -602,6 +629,7 @@ function importing_error_reports_empty_report($importRunId)
 {
   return [
     'import_run_id' => (string) $importRunId,
+    'linked_run_id' => (string) $importRunId,
     'created_at' => '',
     'updated_at' => '',
     'source' => 'import_runtime',

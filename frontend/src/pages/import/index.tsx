@@ -46,6 +46,7 @@ export default function DataImport() {
   const [totalContacts, setTotalContacts] = useState(0);
   const [isValidating, setIsValidating] = useState(false);
   const [validationPromise, setValidationPromise] = useState<Promise<void> | null>(null);
+  const [currentLinkedRunId, setCurrentLinkedRunId] = useState<string | null>(null);
 
   useEffect(() => {
     Proxy.Contact.getSelf().then(setContact);
@@ -136,6 +137,7 @@ export default function DataImport() {
   const handleImport = async () => {
     const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
     const importRunId = createImportRunId();
+    const linkedRunId = currentLinkedRunId ?? importRunId;
     console.log('BATCH_SIZE:', BATCH_SIZE, 'env value:', import.meta.env.VITE_BATCH_SIZE);
     setLoading(true);
     setTotalContacts(contacts.length);
@@ -158,7 +160,7 @@ export default function DataImport() {
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         console.log(`Processing batch ${i + 1}/${batches.length} with ${batch.length} contacts`);
-        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId);
+        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
         console.log(`Batch ${i + 1} result:`, data);
 
         if (!data) throw new Error('Failed to process import');
@@ -216,6 +218,7 @@ export default function DataImport() {
   const handleImportValidOnly = async () => {
     const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
     const importRunId = createImportRunId();
+    const linkedRunId = currentLinkedRunId ?? importRunId;
     setLoading(true);
     setTotalContacts(validContacts.length);
     setProcessedCount(0);
@@ -234,7 +237,7 @@ export default function DataImport() {
     try {
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
-        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId);
+        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
 
         if (!data) throw new Error('Failed to process import');
         
@@ -339,6 +342,7 @@ export default function DataImport() {
 
   const handleBackToImport = () => {
     setCurrentStep('upload');
+    setCurrentLinkedRunId(null);
     setContacts([]);
     setInvalidContacts([]);
     setContinueButton(false);
@@ -368,11 +372,15 @@ export default function DataImport() {
     }
 
     if (invalidContacts.length > 0) {
+      const nextLinkedRunId = createImportRunId();
+      setCurrentLinkedRunId(nextLinkedRunId);
+
       const importRunId = createImportRunId();
       const errors = buildValidationErrorPayload(invalidContacts);
 
       void Proxy.Contact.Import.saveValidationErrorReport({
         importRunId,
+        linkedRunId: nextLinkedRunId,
         summary: {
           totalRecords: summary.totalRecords,
           validRecords: summary.validRecords,
@@ -384,6 +392,8 @@ export default function DataImport() {
       }).catch((saveError) => {
         console.error('Failed to save pre-import validation errors:', saveError);
       });
+    } else {
+      setCurrentLinkedRunId(createImportRunId());
     }
 
     setCurrentStep('preview');

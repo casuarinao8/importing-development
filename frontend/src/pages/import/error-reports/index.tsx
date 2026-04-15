@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -35,6 +35,22 @@ export default function ErrorReports() {
   const [selectedReport, setSelectedReport] = useState<APIImportErrorReport | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
+
+  const getLinkedRunId = (report: { import_run_id: string; linked_run_id: string }) => {
+    return report.linked_run_id || report.import_run_id;
+  };
+
+  const toShortId = (value?: string) => {
+    if (!value) {
+      return '-';
+    }
+
+    if (value.length <= 20) {
+      return value;
+    }
+
+    return `${value.slice(0, 8)}...${value.slice(-6)}`;
+  };
 
   const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -87,6 +103,28 @@ export default function ErrorReports() {
     void loadReports();
   }, [loadReports]);
 
+  const linkedRunCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+
+    reports.forEach((report) => {
+      const key = getLinkedRunId(report);
+      counts[key] = (counts[key] ?? 0) + 1;
+    });
+
+    return counts;
+  }, [reports]);
+
+  const relatedReports = useMemo(() => {
+    if (!selectedReport) {
+      return [] as APIImportErrorReportListItem[];
+    }
+
+    const linkedRunId = getLinkedRunId(selectedReport);
+    return reports.filter((report) => (
+      getLinkedRunId(report) === linkedRunId && report.import_run_id !== selectedReport.import_run_id
+    ));
+  }, [reports, selectedReport]);
+
   const handleViewReport = async (runId: string) => {
     setOpen(true);
     setViewLoading(true);
@@ -109,6 +147,7 @@ export default function ErrorReports() {
     return report.errors.map((item, index) => ({
       'No.': index + 1,
       'Import Run ID': report.import_run_id,
+      'Linked Run ID': getLinkedRunId(report),
       'Source': formatSource(report.source),
       'Saved At': formatDateTime(report.updated_at),
       'File Name': report.summary.file_name ?? '',
@@ -193,6 +232,7 @@ export default function ErrorReports() {
                 <TableRow>
                   <TableCell><strong>Updated At</strong></TableCell>
                   <TableCell><strong>Run ID</strong></TableCell>
+                  <TableCell><strong>Linked Run</strong></TableCell>
                   <TableCell><strong>Source</strong></TableCell>
                   <TableCell align='right'><strong>Errors</strong></TableCell>
                   <TableCell><strong>Actions</strong></TableCell>
@@ -203,6 +243,14 @@ export default function ErrorReports() {
                   <TableRow key={report.import_run_id}>
                     <TableCell>{formatDateTime(report.updated_at)}</TableCell>
                     <TableCell>{report.import_run_id}</TableCell>
+                    <TableCell>
+                      <div className='flex items-center gap-2'>
+                        <span>{toShortId(getLinkedRunId(report))}</span>
+                        {(linkedRunCounts[getLinkedRunId(report)] ?? 1) > 1 && (
+                          <Chip size='small' color='info' label={`${linkedRunCounts[getLinkedRunId(report)]} linked`} />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{formatSource(report.source)}</TableCell>
                     <TableCell align='right'>
                       <Chip
@@ -254,6 +302,9 @@ export default function ErrorReports() {
                   <strong>Run ID:</strong> {selectedReport.import_run_id}
                 </Typography>
                 <Typography variant='body2'>
+                  <strong>Linked Run:</strong> {getLinkedRunId(selectedReport)}
+                </Typography>
+                <Typography variant='body2'>
                   <strong>Updated:</strong> {formatDateTime(selectedReport.updated_at)}
                 </Typography>
                 <Typography variant='body2'>
@@ -269,6 +320,25 @@ export default function ErrorReports() {
                 <Typography variant='body2'>
                   <strong>Totals:</strong> {selectedReport.totals.contacts_processed} contacts, {selectedReport.totals.errors} errors
                 </Typography>
+                {relatedReports.length > 0 && (
+                  <Box>
+                    <Typography variant='body2' className='mb-2'>
+                      <strong>Related Reports:</strong>
+                    </Typography>
+                    <div className='flex flex-wrap gap-2'>
+                      {relatedReports.map((report) => (
+                        <Button
+                          key={report.import_run_id}
+                          size='small'
+                          variant='outlined'
+                          onClick={() => handleViewReport(report.import_run_id)}
+                        >
+                          {formatSource(report.source)} ({toShortId(report.import_run_id)})
+                        </Button>
+                      ))}
+                    </div>
+                  </Box>
+                )}
                 {selectedReport.errors_truncated && (
                   <Alert severity='warning'>
                     This report was truncated to the maximum saved error count.

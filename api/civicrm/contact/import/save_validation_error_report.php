@@ -24,6 +24,7 @@ try {
   }
 
   $importRunId = !empty($post['importRunId']) ? sanitize_text_field($post['importRunId']) : wp_generate_uuid4();
+  $linkedRunId = !empty($post['linkedRunId']) ? sanitize_text_field($post['linkedRunId']) : $importRunId;
   $summary = isset($post['summary']) && is_array($post['summary']) ? $post['summary'] : [];
   $errors = array_map('normalizeValidationErrorEntry', $post['errors']);
   $errors = array_values(array_filter($errors, function ($error) {
@@ -35,6 +36,7 @@ try {
     $errors,
     [
       'source' => 'pre_import_validation',
+      'linked_run_id' => $linkedRunId,
       'batch_number' => null,
       'batch_size' => null,
       'contacts_in_batch' => isset($summary['totalRecords']) ? (int) $summary['totalRecords'] : 0,
@@ -52,6 +54,7 @@ try {
 
   echo json_encode([
     'importRunId' => $importRunId,
+    'linkedRunId' => $linkedRunId,
     'savedErrors' => $savedErrors,
   ]);
 } catch (\Throwable $e) {

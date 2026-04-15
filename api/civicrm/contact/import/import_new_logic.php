@@ -16,6 +16,7 @@ $contacts = [];
 $batchNumber = null;
 $batchSize = null;
 $importRunId = null;
+$linkedRunId = null;
 
 try {
   $post = json_decode(file_get_contents("php://input"), true);
@@ -28,6 +29,7 @@ try {
   $batchNumber = $post['batchNumber'] ?? null;
   $batchSize = $post['batchSize'] ?? null;
   $importRunId = !empty($post['importRunId']) ? sanitize_text_field($post['importRunId']) : wp_generate_uuid4();
+  $linkedRunId = !empty($post['linkedRunId']) ? sanitize_text_field($post['linkedRunId']) : $importRunId;
 
   $taxDeductibleFinancialTypeId = 5;
   $orgSubtype = resolveContactSubtype('Organization', ['Organisation_Donor', 'Organisation_donor']);
@@ -518,6 +520,7 @@ try {
   if (!empty($errors)) {
     saveImportErrorReport(
       $importRunId,
+      $linkedRunId,
       $errors,
       $batchNumber,
       $batchSize,
@@ -543,8 +546,12 @@ try {
 } catch (\Throwable $e) {
   if (!empty($contacts)) {
     try {
+      $fatalRunId = $importRunId ?: wp_generate_uuid4();
+      $fatalLinkedRunId = $linkedRunId ?: $fatalRunId;
+
       saveImportErrorReport(
-        $importRunId ?: wp_generate_uuid4(),
+        $fatalRunId,
+        $fatalLinkedRunId,
         [[
           'field' => 'general',
           'message' => 'Fatal import error: ' . $e->getMessage()
@@ -568,18 +575,20 @@ try {
 }
 
 
-function saveImportErrorReport($importRunId, array $errors, $batchNumber, $batchSize, $contactsInBatch, $newContactsCount, $updatedContactsCount, $contributionsCount, $user)
+function saveImportErrorReport($importRunId, $linkedRunId, array $errors, $batchNumber, $batchSize, $contactsInBatch, $newContactsCount, $updatedContactsCount, $contributionsCount, $user)
 {
   if (empty($errors)) {
     return;
   }
 
   $normalizedErrors = array_map('normalizeImportErrorEntry', $errors);
+  $linkedRunId = !empty($linkedRunId) ? sanitize_text_field((string) $linkedRunId) : sanitize_text_field((string) $importRunId);
   importing_error_reports_upsert_rows(
     $importRunId,
     $normalizedErrors,
     [
       'source' => 'import_runtime',
+      'linked_run_id' => $linkedRunId,
       'batch_number' => $batchNumber !== null ? (int) $batchNumber : null,
       'batch_size' => $batchSize !== null ? (int) $batchSize : null,
       'contacts_in_batch' => (int) $contactsInBatch,

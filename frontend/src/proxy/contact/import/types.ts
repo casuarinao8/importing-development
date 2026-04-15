@@ -96,6 +96,7 @@ export interface APIImportErrorReportTotals {
 
 export interface APIImportErrorReportListItem {
   import_run_id: string;
+  linked_run_id: string;
   updated_at: string;
   source: string;
   totals: {
@@ -150,6 +151,7 @@ export interface APIImportErrorReportError {
 
 export interface APIImportErrorReport {
   import_run_id: string;
+  linked_run_id: string;
   created_at: string;
   updated_at: string;
   source: string;
@@ -163,6 +165,7 @@ export interface APIImportErrorReport {
 
 export interface APISaveValidationErrorReportPayload {
   importRunId: string;
+  linkedRunId?: string;
   summary: {
     totalRecords: number;
     validRecords: number;

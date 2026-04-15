@@ -5,13 +5,13 @@ import { config } from '../../../utils/config';
 export default class ImportManager {
   private static route = `${config.DOMAIN}/${import.meta.env.VITE_SITENAME}/api/civicrm/contact/import`;
 
-  static async processImport(contacts?: ImportContact[], batchNumber?: number, batchSize?: number, importRunId?: string) {
+  static async processImport(contacts?: ImportContact[], batchNumber?: number, batchSize?: number, importRunId?: string, linkedRunId?: string) {
 
     const response = await axios.create({
       headers: { 'Content-Type': 'application/json' }
     }).post<{ newContacts: any[]; updatedContacts: any[]; contributions: any[]; numberOfErrors: number; errors: { contact: ImportContact; errors: ValidationError[] }[] }>(
       `${this.route}/import_new_logic.php`,
-      { contacts, batchNumber, batchSize, importRunId }
+      { contacts, batchNumber, batchSize, importRunId, linkedRunId }
     );
 
     const data = response.data;
