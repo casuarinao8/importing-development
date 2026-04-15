@@ -46,6 +46,13 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
     return String(value);
   };
 
+  const getContactValueByHeaderKey = (contact: ImportContact, key: string): any => {
+    if (key in contact) {
+      return (contact as any)[key];
+    }
+    return contact.contribution ? (contact.contribution as any)[key] : '';
+  };
+
   if (!popUpContent) return null;
 
   // Check if any record has a disbursement batch date value
@@ -87,13 +94,8 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
             {contacts.map((contact, index) => (
               <TableRow key={index}>
                 <TableCell>{index + 1}</TableCell>
-                {Object.entries(contact).map(([field, value], index) => (
-                  field !== 'contribution' ? <TableCell key={index}>{value ?? ''}</TableCell> : null
-                ))}
-                {contact.contribution && Object.entries(contact.contribution)
-                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
-                  .map(([, value], index) => (
-                  <TableCell key={index}>{value ?? ''}</TableCell>
+                {filteredHeaders.map((header) => (
+                  <TableCell key={header.key}>{formatCellValue(getContactValueByHeaderKey(contact, header.key))}</TableCell>
                 ))}
                 </TableRow>
             ))}
@@ -132,13 +134,8 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
                     {item.errors?.map((e: { message: string }) => e.message).join(', ') ?? ''}
                   </div>
                 </TableCell>
-                {Object.entries(item.contact).map(([field, value], index) => (
-                  field !== 'contribution' ? <TableCell key={index}>{formatCellValue(value)}</TableCell> : null
-                ))}
-                {Object.entries(item.contact.contribution)
-                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
-                  .map(([, value], index) => (
-                  <TableCell key={index}>{formatCellValue(value)}</TableCell>
+                {filteredHeaders.map((header) => (
+                  <TableCell key={header.key}>{formatCellValue(getContactValueByHeaderKey(item.contact, header.key))}</TableCell>
                 ))}
               </TableRow>
             ))}
@@ -166,13 +163,8 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
             {contacts.map((contact, index) => (
               <TableRow key={index}>
                 <TableCell>{index + 1}</TableCell>
-                {Object.entries(contact).map(([field, value], index) => (
-                  field !== 'contribution' ? <TableCell key={index}>{value ?? ''}</TableCell> : null
-                ))}
-                {contact.contribution && Object.entries(contact.contribution)
-                  .filter(([key]) => hasDisbursementDate || key !== 'Additional_Contribution_Details.Received_Date')
-                  .map(([, value], index) => (
-                  <TableCell key={index}>{value ?? ''}</TableCell>
+                {filteredHeaders.map((header) => (
+                  <TableCell key={header.key}>{formatCellValue(getContactValueByHeaderKey(contact, header.key))}</TableCell>
                 ))}
               </TableRow>
             ))}

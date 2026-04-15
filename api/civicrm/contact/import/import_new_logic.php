@@ -22,7 +22,6 @@ try {
   $batchNumber = $post['batchNumber'] ?? null;
   $batchSize = $post['batchSize'] ?? null;
 
-  $taxDeductibleFinancialTypeId = 5;
   $orgSubtype = resolveContactSubtype('Organization', ['Organisation_Donor', 'Organisation_donor']);
 
   error_log("[IMPORTING] Processing " . count($contacts) . " contacts");
@@ -36,16 +35,13 @@ try {
   $phones = [];
 
   foreach ($contacts as $contact) {
-    $contribution = $contact['contribution'] ?? null;
-    //tax deductible if financial type id matches the configured value
-    $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
-
-    // Tax-deductible: always use external_id
-    if ($isTaxDeductible && !empty($contact['external_identifier'])) {
+    // Always attempt lookup by external identifier when available.
+    if (!empty($contact['external_identifier'])) {
       $externalIds[] = $contact['external_identifier'];
     }
-    // Non-tax-deductible Individual: use email and phone
-    elseif (!$isTaxDeductible && $contact['contact_type'] === 'Individual') {
+
+    // Fallback identifiers apply to Individuals only.
+    if (($contact['contact_type'] ?? null) === 'Individual') {
       if (!empty($contact['email_primary'])) {
         $emails[] = strtolower($contact['email_primary']);
       }
@@ -53,7 +49,6 @@ try {
         $phones[] = $contact['phone_primary'];
       }
     }
-    // Non-tax-deductible Organization: no checking needed (will create new)
   }
 
   // Remove duplicates
@@ -61,7 +56,7 @@ try {
   $emails = array_unique($emails);
   $phones = array_unique($phones);
 
-  error_log("[IMPORTING] Identifiers to look up - External IDs: " . count($externalIds) . ", Emails: " . count($emails) . ", Phones: " . count($phones));
+  error_log("[IMPORTING] Identifiers to look up - External IDs: " . count($externalIds) . ", Fallback emails (individual only): " . count($emails) . ", Fallback phones (individual only): " . count($phones));
 
   // Fetch existing contacts based on collected identifiers
   // Single query combining external_id, email, and phone matching
@@ -123,56 +118,71 @@ try {
           $existingContactsMap['ext_' . $existing['external_identifier']] = $contactData;
         }
 
-        // Index by emails
-        foreach ($contactData['emails'] as $email) {
-          if (!isset($existingContactsMap['email_' . $email])) {
-            $existingContactsMap['email_' . $email] = $contactData;
+        // Index email/phone fallback keys for Individuals only.
+        if (($contactData['contact_type'] ?? null) === 'Individual') {
+          foreach ($contactData['emails'] as $email) {
+            if (!isset($existingContactsMap['email_' . $email])) {
+              $existingContactsMap['email_' . $email] = $contactData;
+            }
           }
-        }
 
-        // Index by phones
-        foreach ($contactData['phones'] as $phone) {
-          if (!isset($existingContactsMap['phone_' . $phone])) {
-            $existingContactsMap['phone_' . $phone] = $contactData;
+          foreach ($contactData['phones'] as $phone) {
+            if (!isset($existingContactsMap['phone_' . $phone])) {
+              $existingContactsMap['phone_' . $phone] = $contactData;
+            }
           }
         }
       }
     }
   }
 
-  error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext/email/phone)");
+  error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext + individual email/phone fallback keys)");
 
   // Function to find existing contact based on matching rules
-  function findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId)
+  function findExistingContact($contact, $existingContactsMap)
   {
-    $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
+    $contactType = $contact['contact_type'] ?? null;
 
-    // Tax-deductible: match by external_id
-    if ($isTaxDeductible && !empty($contact['external_identifier'])) {
+    // External identifier has highest priority when provided.
+    // For Organizations this is UEN; for Individuals this is NRIC/FIN.
+    if (!empty($contact['external_identifier'])) {
       $key = 'ext_' . $contact['external_identifier'];
       return $existingContactsMap[$key] ?? null;
     }
 
-    // Non-tax-deductible Individual: match by email first, then phone
-    if (!$isTaxDeductible && $contact['contact_type'] === 'Individual') {
-      // Try email first
-      if (!empty($contact['email_primary'])) {
-        $key = 'email_' . strtolower($contact['email_primary']);
-        if (isset($existingContactsMap[$key])) {
-          return $existingContactsMap[$key];
-        }
-      }
+    // Organizations are never matched by email/phone fallback.
+    if ($contactType === 'Organization') {
+      return null;
+    }
 
-      // Try phone if email not found
-      if (!empty($contact['phone_primary'])) {
-        $key = 'phone_' . $contact['phone_primary'];
-        if (isset($existingContactsMap[$key])) {
-          return $existingContactsMap[$key];
+    // Only Individuals use fallback matching when NRIC/FIN is not available or not found.
+    if ($contactType !== 'Individual') {
+      return null;
+    }
+
+    // Email fallback (same contact type only).
+    if (!empty($contact['email_primary'])) {
+      $key = 'email_' . strtolower($contact['email_primary']);
+      if (isset($existingContactsMap[$key])) {
+        $candidate = $existingContactsMap[$key];
+        if (($candidate['contact_type'] ?? null) === ($contact['contact_type'] ?? null)) {
+          return $candidate;
         }
       }
     }
 
-    // Non-tax-deductible Organization: no matching, always create new
+    // Phone fallback (same contact type only).
+    if (!empty($contact['phone_primary'])) {
+      $key = 'phone_' . $contact['phone_primary'];
+      if (isset($existingContactsMap[$key])) {
+        $candidate = $existingContactsMap[$key];
+        if (($candidate['contact_type'] ?? null) === ($contact['contact_type'] ?? null)) {
+          return $candidate;
+        }
+      }
+    }
+
+    // No usable match found.
     return null;
   }
 
@@ -185,7 +195,7 @@ try {
     $contactSuccess = false;
 
     try {
-      $existingContact = findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId);
+      $existingContact = findExistingContact($contact, $existingContactsMap);
       $contactId = null;
 
       if ($existingContact) {
@@ -335,11 +345,13 @@ try {
         if (!empty($contact['external_identifier'])) {
           $existingContactsMap['ext_' . $contact['external_identifier']] = $newContactData;
         }
-        if (!empty($contact['email_primary'])) {
-          $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
-        }
-        if (!empty($contact['phone_primary'])) {
-          $existingContactsMap['phone_' . $contact['phone_primary']] = $newContactData;
+        if (($contact['contact_type'] ?? null) === 'Individual') {
+          if (!empty($contact['email_primary'])) {
+            $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
+          }
+          if (!empty($contact['phone_primary'])) {
+            $existingContactsMap['phone_' . $contact['phone_primary']] = $newContactData;
+          }
         }
       }
 
@@ -434,75 +446,164 @@ try {
   $importedContributions = [];
 
   if (!empty($contributionRecords)) {
-    try {
-      error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
-      $contributionResults = \Civi\Api4\Contribution::save(false)
-        ->setRecords($contributionRecords)
-        ->execute();
+    $filteredContributionRecords = [];
+    $filteredContactContributionMap = [];
+    $seenTransactionIds = [];
 
-      foreach ($contributionResults as $idx => $contributionResult) {
-        $contactId = $contactContributionMap[$idx]['contact_id'];
-        $contributionId = $contributionResult['id'];
-        error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+    foreach ($contributionRecords as $idx => $record) {
+      $trxnId = trim((string)($record['trxn_id'] ?? ''));
+      $meta = $contactContributionMap[$idx] ?? [];
 
-        $importedContributions[] = [
-          'contribution_id' => $contributionId,
-          'contact_id' => $contactId,
-          'name' => $contactContributionMap[$idx]['name'],
-          'row' => $contactContributionMap[$idx]['row'],
-          'financial_type' => $contactContributionMap[$idx]['financial_type'],
-          'total_amount' => $contributionResult['total_amount'],
-          'receive_date' => $contactContributionMap[$idx]['receive_date'],
-          'source' => $contactContributionMap[$idx]['source'],
-          'trxn_id' => $contactContributionMap[$idx]['trxn_id'],
-          'campaign_name' => $contactContributionMap[$idx]['campaign_name'],
-          'platform' => $contactContributionMap[$idx]['platform'],
-          'frequency' => $contactContributionMap[$idx]['frequency'],
-          'remarks' => $contactContributionMap[$idx]['remarks'],
-          'imported_date' => $contactContributionMap[$idx]['imported_date'],
-          'received_date' => $contactContributionMap[$idx]['received_date']
+      // Skip later duplicates in the same import batch to avoid failing all saves.
+      if ($trxnId !== '' && isset($seenTransactionIds[$trxnId])) {
+        $firstRow = $seenTransactionIds[$trxnId]['row'] ?? 'unknown';
+        $currentRow = $meta['row'] ?? 'unknown';
+
+        error_log("[IMPORTING] Row " . $currentRow . ": Duplicate trxn_id within import batch skipped (trxn_id: " . $trxnId . ", first seen at row " . $firstRow . ")");
+
+        $errors[] = [
+          'row' => is_numeric($currentRow) ? (int)$currentRow : null,
+          'field' => 'trxn_id',
+          'message' => "Contribution not imported at row $currentRow: duplicate transaction ID '$trxnId' already used at row $firstRow in this file."
         ];
-
-        // Link contribution to contact records
-        foreach ($newContacts as &$nc) {
-          if ($nc['contact_id'] == $contactId) {
-            $nc['contribution_id'] = $contributionId;
-            break;
-          }
-        }
-        unset($nc);
-
-        foreach ($updatedContacts as &$uc) {
-          if ($uc['contact_id'] == $contactId) {
-            $uc['contribution_id'] = $contributionId;
-            break;
-          }
-        }
-        unset($uc);
+        continue;
       }
 
-    } catch (\Throwable $e) {
-      $errorMessage = $e->getMessage();
-      error_log("[IMPORTING] Bulk contribution save failed (" . get_class($e) . "): " . $errorMessage);
-
-      $actualBatchSize = count($contacts);
-      $minRow = $batchNumber ? (($batchNumber - 1) * $batchSize) + 1 : null;
-      $maxRow = $batchNumber ? $minRow + $actualBatchSize - 1 : null;
-
-      if ($minRow !== null && $maxRow !== null) {
-        $rowRange = ($minRow == $maxRow) ? "row $minRow" : "rows $minRow to $maxRow";
-      } else {
-        $rowRange = "unknown rows";
-        $minRow = null;
-        $maxRow = null;
+      if ($trxnId !== '') {
+        $seenTransactionIds[$trxnId] = [
+          'row' => $meta['row'] ?? null
+        ];
       }
 
-      $errors[] = [
-        'row' => $minRow,
-        'row_end' => $maxRow,
-        'field' => 'contribution',
-        'message' => "Contribution import failed for $rowRange. Error: $errorMessage"
-      ];
+      $filteredContributionRecords[] = $record;
+      $filteredContactContributionMap[] = $meta;
+    }
+
+    $contributionRecords = $filteredContributionRecords;
+    $contactContributionMap = $filteredContactContributionMap;
+
+    if (empty($contributionRecords)) {
+      error_log("[IMPORTING] No contributions left to import after duplicate trxn_id filtering");
+    } else {
+      try {
+        error_log("[IMPORTING] Bulk saving " . count($contributionRecords) . " contributions");
+        $contributionResults = \Civi\Api4\Contribution::save(false)
+          ->setRecords($contributionRecords)
+          ->execute();
+
+        foreach ($contributionResults as $idx => $contributionResult) {
+          $contactId = $contactContributionMap[$idx]['contact_id'];
+          $contributionId = $contributionResult['id'];
+          error_log("[IMPORTING] Row " . $contactContributionMap[$idx]['row'] . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($contactContributionMap[$idx]['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+
+          $importedContributions[] = [
+            'contribution_id' => $contributionId,
+            'contact_id' => $contactId,
+            'name' => $contactContributionMap[$idx]['name'],
+            'row' => $contactContributionMap[$idx]['row'],
+            'financial_type' => $contactContributionMap[$idx]['financial_type'],
+            'total_amount' => $contributionResult['total_amount'],
+            'receive_date' => $contactContributionMap[$idx]['receive_date'],
+            'source' => $contactContributionMap[$idx]['source'],
+            'trxn_id' => $contactContributionMap[$idx]['trxn_id'],
+            'campaign_name' => $contactContributionMap[$idx]['campaign_name'],
+            'platform' => $contactContributionMap[$idx]['platform'],
+            'frequency' => $contactContributionMap[$idx]['frequency'],
+            'remarks' => $contactContributionMap[$idx]['remarks'],
+            'imported_date' => $contactContributionMap[$idx]['imported_date'],
+            'received_date' => $contactContributionMap[$idx]['received_date']
+          ];
+
+          // Link contribution to contact records
+          foreach ($newContacts as &$nc) {
+            if ($nc['contact_id'] == $contactId) {
+              $nc['contribution_id'] = $contributionId;
+              break;
+            }
+          }
+          unset($nc);
+
+          foreach ($updatedContacts as &$uc) {
+            if ($uc['contact_id'] == $contactId) {
+              $uc['contribution_id'] = $contributionId;
+              break;
+            }
+          }
+          unset($uc);
+        }
+
+      } catch (\Throwable $e) {
+        $errorMessage = $e->getMessage();
+        error_log("[IMPORTING] Bulk contribution save failed (" . get_class($e) . "): " . $errorMessage . ". Retrying each contribution individually.");
+
+        foreach ($contributionRecords as $idx => $record) {
+          $meta = $contactContributionMap[$idx] ?? [];
+
+          try {
+            $singleResult = \Civi\Api4\Contribution::save(false)
+              ->setRecords([$record])
+              ->execute();
+
+            $contributionResult = $singleResult[0] ?? null;
+            if (!$contributionResult) {
+              throw new Exception('No contribution result returned from API4 save');
+            }
+
+            $contactId = $meta['contact_id'] ?? null;
+            $contributionId = $contributionResult['id'];
+
+            error_log("[IMPORTING] Row " . ($meta['row'] ?? 'unknown') . ": Contribution ID " . $contributionId . " saved for contact ID " . $contactId . " (trxn_id: " . ($meta['trxn_id'] ?? 'none') . ", amount: " . $contributionResult['total_amount'] . ")");
+
+            $importedContributions[] = [
+              'contribution_id' => $contributionId,
+              'contact_id' => $contactId,
+              'name' => $meta['name'] ?? '',
+              'row' => $meta['row'] ?? null,
+              'financial_type' => $meta['financial_type'] ?? '',
+              'total_amount' => $contributionResult['total_amount'],
+              'receive_date' => $meta['receive_date'] ?? '',
+              'source' => $meta['source'] ?? '',
+              'trxn_id' => $meta['trxn_id'] ?? '',
+              'campaign_name' => $meta['campaign_name'] ?? '',
+              'platform' => $meta['platform'] ?? '',
+              'frequency' => $meta['frequency'] ?? '',
+              'remarks' => $meta['remarks'] ?? '',
+              'imported_date' => $meta['imported_date'] ?? '',
+              'received_date' => $meta['received_date'] ?? ''
+            ];
+
+            // Link contribution to contact records
+            foreach ($newContacts as &$nc) {
+              if ($nc['contact_id'] == $contactId) {
+                $nc['contribution_id'] = $contributionId;
+                break;
+              }
+            }
+            unset($nc);
+
+            foreach ($updatedContacts as &$uc) {
+              if ($uc['contact_id'] == $contactId) {
+                $uc['contribution_id'] = $contributionId;
+                break;
+              }
+            }
+            unset($uc);
+
+          } catch (\Throwable $singleError) {
+            $row = $meta['row'] ?? null;
+            $rowMessage = $row ? "row $row" : 'unknown row';
+            $singleErrorMessage = $singleError->getMessage();
+
+            error_log("[IMPORTING] Contribution import failed at " . $rowMessage . " (" . get_class($singleError) . "): " . $singleErrorMessage);
+
+            $errors[] = [
+              'row' => $row,
+              'field' => 'contribution',
+              'message' => "Contribution import failed at $rowMessage. Error: $singleErrorMessage"
+            ];
+          }
+        }
+      }
     }
   }
 

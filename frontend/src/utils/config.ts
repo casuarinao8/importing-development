@@ -1,7 +1,6 @@
 interface AppConfig {
   DOMAIN: string;
   IMPORT_TITLE: string;
-  TEMPLATE_URL: string;
   LATEST_DONATIONS_URL: string;
 }
 

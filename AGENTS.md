@@ -18,7 +18,7 @@
 - Formatting follows 2-space indentation, single quotes, and semicolons as shown in `frontend/src/*.tsx`.
 - Component and page files are kebab-case (example: `frontend/src/components/welcome-header.tsx`).
 - API manager modules use a `types.ts` file alongside manager classes in `frontend/src/proxy/*`.
-- PHP endpoint filenames use snake_case (example: `api/civicrm/contact/import/get_import_settings.php`).
+- PHP endpoint filenames use snake_case (example: `api/civicrm/contact/import/get_duplicate_transaction_ids.php`).
 
 ## Testing Guidelines
 - No automated test suite is checked in. Validate changes manually by building and running inside a WordPress + CiviCRM environment, then walking through the CSV import flow.

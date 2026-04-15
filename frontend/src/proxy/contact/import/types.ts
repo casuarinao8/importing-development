@@ -30,7 +30,7 @@ export interface Contribution {
   trxn_id: string;
   check_number?: string;
   "Additional_Contribution_Details.NRIC_FIN_UEN": string | null;
-  "Additional_Contribution_Details.Campaign": string | null;
+  "Additional_Contribution_Details.Campaign": number | null;
   "Additional_Contribution_Details.Payment_Platform": number | null;
   "Additional_Contribution_Details.Recurring_Donation": number | null;
   "Additional_Contribution_Details.Remarks": string;
@@ -73,10 +73,4 @@ export interface APISettings {
   domain_id: number;
   name: string;
   value: string | any[];
-}
-
-export interface APIImportSettings {
-  import_dedupe_rule: string;
-  import_contact_types: string[];
-  import_custom_fields: string[];
 }

@@ -48,13 +48,13 @@ PHP endpoints consumed by the frontend via Axios. All CiviCRM interactions use A
 
 - **`api/civicrm/contact/import/import_new_logic.php`** — Core import engine. Processes records in batches with a 5-minute PHP time limit. Logs with `[IMPORTING]` prefix.
   - **Contact matching rules:**
-    - Tax-deductible contributions (`financial_type_id == 5`): match by `external_identifier`
-    - Non-tax-deductible Individuals: match by email, then phone
-    - Non-tax-deductible Organizations: always create new
+    - If `external_identifier` is present: match by `external_identifier`
+    - If `external_identifier` is empty: fallback to email, then phone
+    - Email/phone fallback requires matching `contact_type`
   - Updates existing contacts (name, email, phone, address) or creates new ones
   - Bulk-inserts contributions after all contacts are processed
   - Deduplicates via `Additional_Contribution_Details.Imported_Date`
-- **`api/civicrm/contact/import/get_import_settings.php` / `set_import_settings.php`** — Persist settings to CiviCRM's Setting entity
+- **`api/civicrm/contact/import/get_setting_by_name.php`** — Lookup persisted setting values by name
 - **`api/encode.php` / `decode.php`** — AES-256-CBC encryption for sensitive data
 - **`api/wordpress/has_permission.php`** — WordPress permission checks
 
