@@ -22,8 +22,12 @@ interface DynamicCodeMaps {
 }
 
 const DEFAULT_ANONYMOUS_NAME = 'Anonymous Donor';
-const DEFAULT_ANONYMOUS_EXTERNAL_ID = 'sample-id';
+const ANONYMOUS_CONTACT_EXTERNAL_ID_GIVING_SG = 'anonymous-contact-giving-sg';
+const ANONYMOUS_CONTACT_EXTERNAL_ID_GIVEASIA = 'anonymous-contact-giveasia';
+const ANONYMOUS_CONTACT_EXTERNAL_ID_BENEVITY = 'anonymous-contact-benevity';
+const ANONYMOUS_CONTACT_EXTERNAL_ID_ADHOC = 'anonymous-contact-adhoc';
 const DEFAULT_ANONYMOUS_EMAIL = 'anonymousdonor@o8.com';
+const AUTO_MAPPING_ERROR_MESSAGE = 'CSV auto-mapping failed. Please upload a supported source export or a mapped template file.';
 
 const SALUTATION_CODE_MAP: Record<string, number> = {
   MRS: 1,
@@ -162,11 +166,14 @@ export class UploadCsvMapper {
       };
     }
 
-    const mappedContacts = ContactValidator.parseCSV(csvText);
-    return {
-      contacts: mappedContacts,
-      format: mappedContacts.length > 0 ? 'mapped-template' : detectedFormat
-    };
+    if (detectedFormat === 'mapped-template') {
+      return {
+        contacts: ContactValidator.parseCSV(csvText),
+        format: detectedFormat
+      };
+    }
+
+    throw new Error(AUTO_MAPPING_ERROR_MESSAGE);
   }
 
   private static detectFormat(rows: string[][]): UploadCSVFormat {
@@ -443,7 +450,7 @@ export class UploadCsvMapper {
     const hasRealDonorName = Boolean(values.donorName) && !isAnonymous;
     const hasRealDonorDetails = hasRealDonorName || Boolean(values.accountEmail);
     const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
-    const externalIdentifier = values.externalIdentifierRaw || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EXTERNAL_ID : '');
+    const externalIdentifier = values.externalIdentifierRaw || (applyAnonymousFallback ? ANONYMOUS_CONTACT_EXTERNAL_ID_GIVING_SG : '');
     const inferredContactType = this.inferContactType(externalIdentifier);
 
     const contact = this.createEmptyContact();
@@ -499,7 +506,12 @@ export class UploadCsvMapper {
       const email = this.cleanCell(row[16]);
       const mobile = this.cleanCell(row[17]);
       const taxDeduction = this.pickGiveAsiaTaxDeduction(row);
-      const externalIdentifier = this.pickGiveAsiaExternalIdentifier(row);
+      const externalIdentifierRaw = this.pickGiveAsiaExternalIdentifier(row);
+      const isAnonymous = this.isAnonymousDonor('', donorName);
+      const hasRealDonorName = Boolean(donorName) && !isAnonymous;
+      const hasRealDonorDetails = hasRealDonorName || Boolean(email) || Boolean(mobile);
+      const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
+      const externalIdentifier = externalIdentifierRaw || (applyAnonymousFallback ? ANONYMOUS_CONTACT_EXTERNAL_ID_GIVEASIA : '');
       const rawAddress = this.pickFirstNonEmpty([
         [this.cleanCell(row[23]), this.cleanCell(row[24])].filter(Boolean).join(' '),
         this.cleanCell(row[23]),
@@ -559,6 +571,11 @@ export class UploadCsvMapper {
       const firstName = this.cleanCell(row[3]);
       const lastName = this.cleanCell(row[4]);
       const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+      const isAnonymous = this.isAnonymousDonor('', fullName);
+      const email = this.cleanCell(row[5]);
+      const hasRealDonorName = Boolean(fullName) && !isAnonymous;
+      const hasRealDonorDetails = hasRealDonorName || Boolean(email);
+      const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
       const receiveDate = this.normalizeDateForImport(this.cleanCell(row[2]));
       const totalAmount = this.parseBenevityTotalAmount(row[18], row[19], row[14]);
       const transactionId = this.cleanCell(row[12]);
@@ -570,8 +587,8 @@ export class UploadCsvMapper {
       contact.prefix_id = null;
       contact.name = fullName || DEFAULT_ANONYMOUS_NAME;
       contact.preferred_name = '';
-      contact.external_identifier = '';
-      contact.email_primary = this.cleanCell(row[5]);
+      contact.external_identifier = applyAnonymousFallback ? ANONYMOUS_CONTACT_EXTERNAL_ID_BENEVITY : '';
+      contact.email_primary = email;
       contact.phone_primary = '';
       contact.street_address = this.cleanCell(row[6]);
       contact.unit_floor_number = '';
@@ -619,7 +636,7 @@ export class UploadCsvMapper {
       const hasRealDonorName = Boolean(donorName) && !isAnonymous;
       const hasRealDonorDetails = hasRealDonorName || Boolean(accountEmail);
       const applyAnonymousFallback = isAnonymous && !hasRealDonorDetails;
-      const externalIdentifier = externalIdentifierRaw || (applyAnonymousFallback ? DEFAULT_ANONYMOUS_EXTERNAL_ID : '');
+      const externalIdentifier = externalIdentifierRaw || (applyAnonymousFallback ? ANONYMOUS_CONTACT_EXTERNAL_ID_ADHOC : '');
 
       const contact = this.createEmptyContact();
       contact.contact_type = this.inferContactType(externalIdentifier);
@@ -729,7 +746,10 @@ export class UploadCsvMapper {
 
   private static async getCodeMaps(): Promise<DynamicCodeMaps> {
     if (!this.codeMapsPromise) {
-      this.codeMapsPromise = this.loadCodeMaps();
+      this.codeMapsPromise = this.loadCodeMaps().catch((error) => {
+        this.codeMapsPromise = null;
+        throw error;
+      });
     }
 
     return this.codeMapsPromise;
@@ -901,21 +921,6 @@ export class UploadCsvMapper {
         'Donation_In_Kind_Additional_Details.Quantity': null
       }
     };
-  }
-
-  private static normalizeRecord(row: Record<string, string>): Record<string, string> {
-    const normalized: Record<string, string> = {};
-
-    Object.entries(row).forEach(([header, value]) => {
-      const normalizedHeader = this.normalizeHeader(header);
-      if (!normalizedHeader) {
-        return;
-      }
-
-      normalized[normalizedHeader] = this.cleanCell(value);
-    });
-
-    return normalized;
   }
 
   private static normalizeRowByHeaders(row: string[], normalizedHeaders: string[]): Record<string, string> {

@@ -40,12 +40,14 @@ try {
       $externalIds[] = $contact['external_identifier'];
     }
 
-    // Fallback identifiers for contacts without external ID (or when ext ID is not found in DB).
-    if (!empty($contact['email_primary'])) {
-      $emails[] = strtolower($contact['email_primary']);
-    }
-    if (!empty($contact['phone_primary'])) {
-      $phones[] = $contact['phone_primary'];
+    // Fallback identifiers apply to Individuals only.
+    if (($contact['contact_type'] ?? null) === 'Individual') {
+      if (!empty($contact['email_primary'])) {
+        $emails[] = strtolower($contact['email_primary']);
+      }
+      if (!empty($contact['phone_primary'])) {
+        $phones[] = $contact['phone_primary'];
+      }
     }
   }
 
@@ -54,7 +56,7 @@ try {
   $emails = array_unique($emails);
   $phones = array_unique($phones);
 
-  error_log("[IMPORTING] Identifiers to look up - External IDs: " . count($externalIds) . ", Emails: " . count($emails) . ", Phones: " . count($phones));
+  error_log("[IMPORTING] Identifiers to look up - External IDs: " . count($externalIds) . ", Fallback emails (individual only): " . count($emails) . ", Fallback phones (individual only): " . count($phones));
 
   // Fetch existing contacts based on collected identifiers
   // Single query combining external_id, email, and phone matching
@@ -116,32 +118,46 @@ try {
           $existingContactsMap['ext_' . $existing['external_identifier']] = $contactData;
         }
 
-        // Index by emails
-        foreach ($contactData['emails'] as $email) {
-          if (!isset($existingContactsMap['email_' . $email])) {
-            $existingContactsMap['email_' . $email] = $contactData;
+        // Index email/phone fallback keys for Individuals only.
+        if (($contactData['contact_type'] ?? null) === 'Individual') {
+          foreach ($contactData['emails'] as $email) {
+            if (!isset($existingContactsMap['email_' . $email])) {
+              $existingContactsMap['email_' . $email] = $contactData;
+            }
           }
-        }
 
-        // Index by phones
-        foreach ($contactData['phones'] as $phone) {
-          if (!isset($existingContactsMap['phone_' . $phone])) {
-            $existingContactsMap['phone_' . $phone] = $contactData;
+          foreach ($contactData['phones'] as $phone) {
+            if (!isset($existingContactsMap['phone_' . $phone])) {
+              $existingContactsMap['phone_' . $phone] = $contactData;
+            }
           }
         }
       }
     }
   }
 
-  error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext/email/phone)");
+  error_log("[IMPORTING] Found " . count($existingContactsMap) . " existing contact entries in DB (indexed by ext + individual email/phone fallback keys)");
 
   // Function to find existing contact based on matching rules
   function findExistingContact($contact, $existingContactsMap)
   {
+    $contactType = $contact['contact_type'] ?? null;
+
     // External identifier has highest priority when provided.
+    // For Organizations this is UEN; for Individuals this is NRIC/FIN.
     if (!empty($contact['external_identifier'])) {
       $key = 'ext_' . $contact['external_identifier'];
       return $existingContactsMap[$key] ?? null;
+    }
+
+    // Organizations are never matched by email/phone fallback.
+    if ($contactType === 'Organization') {
+      return null;
+    }
+
+    // Only Individuals use fallback matching when NRIC/FIN is not available or not found.
+    if ($contactType !== 'Individual') {
+      return null;
     }
 
     // Email fallback (same contact type only).
@@ -329,11 +345,13 @@ try {
         if (!empty($contact['external_identifier'])) {
           $existingContactsMap['ext_' . $contact['external_identifier']] = $newContactData;
         }
-        if (!empty($contact['email_primary'])) {
-          $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
-        }
-        if (!empty($contact['phone_primary'])) {
-          $existingContactsMap['phone_' . $contact['phone_primary']] = $newContactData;
+        if (($contact['contact_type'] ?? null) === 'Individual') {
+          if (!empty($contact['email_primary'])) {
+            $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
+          }
+          if (!empty($contact['phone_primary'])) {
+            $existingContactsMap['phone_' . $contact['phone_primary']] = $newContactData;
+          }
         }
       }
 

@@ -97,7 +97,7 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
       setUploadedFileName(fileName);
       await onUpload(contacts, fileName, fileSize);
     } catch (err) {
-      setError('Error reading the file. Please try again.');
+      setError(err instanceof Error && err.message ? err.message : 'Error reading the file. Please try again.');
       console.error('File reading error:', err);
       setContinueButton(false);
     } finally {
@@ -118,12 +118,6 @@ export default function UploadCSV({ onUpload, setContinueButton }: UploadCSVProp
       {!error && detectedFormat && detectedFormat !== 'unknown' && (
         <Alert severity="info" className="mb-4">
           Detected source: {getFormatLabel(detectedFormat)}. Mapping was applied automatically.
-        </Alert>
-      )}
-
-      {!error && detectedFormat === 'unknown' && (
-        <Alert severity="warning" className="mb-4">
-          CSV format could not be confidently identified. Parsed with default mapped-template rules.
         </Alert>
       )}
 
