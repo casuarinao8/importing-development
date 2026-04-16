@@ -8,10 +8,7 @@ import { SubtypesProvider } from './contexts/Contact';
 import { createTheme, StyledEngineProvider, ThemeProvider } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import Test from './pages/test';
 import twConfig from '../tailwind.config';
-import Auth from './pages/auth';
-import NoPerms from './pages/no-perms';
 import NotFound from './pages/not-found';
 import DataImport from './pages/import/';
 import Settings from './pages/import/settings';
@@ -40,10 +37,7 @@ createRoot(document.getElementById('root')!).render(
             <HashRouter>
               <Routes>
                 <Route path='*' element={<NotFound />} />
-                <Route path='/noperms' element={<NoPerms />} />
-                <Route path='/test' element={<Test />} />
                 <Route path='/' index element={<Root />} />
-                <Route path='/auth/:encrypted' element={<Auth />} />
                 <Route path='/import' element={<DataImport />} />
                 <Route path='/import/settings' element={<Settings />} />
                 <Route path='/import/error-reports' element={<ErrorReports />} />

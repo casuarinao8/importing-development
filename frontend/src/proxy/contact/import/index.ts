@@ -28,11 +28,6 @@ export default class ImportManager {
     return results;
   }
 
-  static async getSettingByName(name: string) {
-		const response = await axios.get<APISettings>(`${this.route}/get_setting_by_name.php?name=${name}`);
-		return response.data;
-	}
-
   static async getDuplicateTransactionIds(transactionIds: string[]) {
 		const response = await axios.post<{ id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]>(
 			`${this.route}/get_duplicate_transaction_ids.php`,
