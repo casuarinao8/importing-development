@@ -5,8 +5,9 @@ import UploadCSV from './upload-csv';
 import Preview from './preview';
 import Results from './results';
 import { downloadCSV } from '../../utils/downloadCSV';
-import { ImportContact, ImportSummary, ImportResults, ValidationError } from '../../proxy/contact/import/types';
+import { ImportContact, ImportSummary, ImportResults, ValidationError, APIImportErrorReportError } from '../../proxy/contact/import/types';
 import { Button } from '@mui/material';
+import { Description, History } from '@mui/icons-material';
 import { ContactValidator } from './components/validation-utils';
 import Progress from './components/progress';
 import Papa from 'papaparse';
@@ -42,6 +43,7 @@ export default function DataImport() {
   const [totalContacts, setTotalContacts] = useState(0);
   const [isValidating, setIsValidating] = useState(false);
   const [validationPromise, setValidationPromise] = useState<Promise<void> | null>(null);
+  const [currentLinkedRunId, setCurrentLinkedRunId] = useState<string | null>(null);
 
   useEffect(() => {
     Proxy.Contact.getSelf().then(setContact);
@@ -53,6 +55,45 @@ export default function DataImport() {
       chunks.push(array.slice(i, i + size));
     }
     return chunks;
+  };
+
+  const createImportRunId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    return `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const buildValidationErrorPayload = (items: Array<{ contact: ImportContact; errors: ValidationError[] }>): APIImportErrorReportError[] => {
+    return items.flatMap((item) => {
+      const contribution = item.contact.contribution;
+
+      return item.errors.map((error) => ({
+        row: error.row ?? null,
+        row_end: null,
+        field: error.field,
+        message: error.message,
+        contact: {
+          contact_id: null,
+          row: error.row ?? null,
+          label: 'Pre-Import Validation Error',
+          name: item.contact.name ?? null,
+          contact_type: item.contact.contact_type ?? null,
+          external_identifier: item.contact.external_identifier ?? null,
+          email_primary: item.contact.email_primary ?? null,
+          phone_primary: item.contact.phone_primary ?? null,
+          contribution: {
+            trxn_id: contribution?.trxn_id ?? null,
+            total_amount: contribution?.total_amount ?? null,
+            receive_date: contribution?.receive_date ?? null,
+            financial_type: contribution?.financial_type ?? null,
+            imported_date: contribution?.['Additional_Contribution_Details.Imported_Date'] ?? null,
+            received_date: contribution?.['Additional_Contribution_Details.Received_Date'] ?? null,
+          },
+        },
+      }));
+    });
   };
 
   const handleUpload = async (data: ImportContact[], fileName: string, fileSize: string) => {
@@ -71,6 +112,7 @@ export default function DataImport() {
           fileName,
           fileSize
         });
+
         setContinueButton(true);
       } catch (error) {
         console.error('Validation error:', error);
@@ -86,6 +128,8 @@ export default function DataImport() {
 
   const handleImport = async () => {
     const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
+    const importRunId = createImportRunId();
+    const linkedRunId = currentLinkedRunId ?? importRunId;
     console.log('BATCH_SIZE:', BATCH_SIZE, 'env value:', import.meta.env.VITE_BATCH_SIZE);
     setLoading(true);
     setTotalContacts(contacts.length);
@@ -108,7 +152,7 @@ export default function DataImport() {
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         console.log(`Processing batch ${i + 1}/${batches.length} with ${batch.length} contacts`);
-        const data = await Proxy.Contact.Import.processImport(batch, i+1, BATCH_SIZE);
+        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
         console.log(`Batch ${i + 1} result:`, data);
 
         if (!data) throw new Error('Failed to process import');
@@ -165,6 +209,8 @@ export default function DataImport() {
 
   const handleImportValidOnly = async () => {
     const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
+    const importRunId = createImportRunId();
+    const linkedRunId = currentLinkedRunId ?? importRunId;
     setLoading(true);
     setTotalContacts(validContacts.length);
     setProcessedCount(0);
@@ -183,7 +229,7 @@ export default function DataImport() {
     try {
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
-        const data = await Proxy.Contact.Import.processImport(batch);
+        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
 
         if (!data) throw new Error('Failed to process import');
         
@@ -288,6 +334,7 @@ export default function DataImport() {
 
   const handleBackToImport = () => {
     setCurrentStep('upload');
+    setCurrentLinkedRunId(null);
     setContacts([]);
     setInvalidContacts([]);
     setContinueButton(false);
@@ -315,6 +362,32 @@ export default function DataImport() {
     if (isValidating && validationPromise) {
       await validationPromise;
     }
+
+    if (invalidContacts.length > 0) {
+      const nextLinkedRunId = createImportRunId();
+      setCurrentLinkedRunId(nextLinkedRunId);
+
+      const importRunId = createImportRunId();
+      const errors = buildValidationErrorPayload(invalidContacts);
+
+      void Proxy.Contact.Import.saveValidationErrorReport({
+        importRunId,
+        linkedRunId: nextLinkedRunId,
+        summary: {
+          totalRecords: summary.totalRecords,
+          validRecords: summary.validRecords,
+          reviewRecords: summary.reviewRecords,
+          fileName: summary.fileName,
+          fileSize: summary.fileSize,
+        },
+        errors,
+      }).catch((saveError) => {
+        console.error('Failed to save pre-import validation errors:', saveError);
+      });
+    } else {
+      setCurrentLinkedRunId(createImportRunId());
+    }
+
     setCurrentStep('preview');
   };
 
@@ -322,6 +395,12 @@ export default function DataImport() {
     switch (currentStep) {
       case 'upload':
         return <>
+          <div className='my-4 flex justify-between'>
+            <div className='flex gap-2'>
+              <ActionButton actionName='Saved Error Reports' iconName={<History />} variant='outlined' onClick={() => navigate('/import/error-reports')} />
+            </div>
+            <ActionButton actionName='Download Template' iconName={<Description />} onClick={handleDownloadTemplate} />
+          </div>
             <UploadCSV onUpload={handleUpload} setContinueButton={setContinueButton} />
             {continueButton && <div className='my-4 flex justify-end'>
               <Button 
