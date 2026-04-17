@@ -223,12 +223,41 @@ export class ContactValidator {
   }
 
   private static convertToISO(dateStr: string): string {
-    // d/m/yyyy or dd/mm/yyyy with optional time (stripped)
-    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(dateStr.trim());
-    if (!match) return ''; // invalid format
+    const trimmedValue = dateStr.trim();
+    if (!trimmedValue) {
+      return '';
+    }
 
-    const [_, dd, mm, yyyy] = match;
-    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+    // DD/MM/YYYY or DD/MM/YY with optional time
+    const standardDateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(trimmedValue);
+    if (standardDateMatch) {
+      const [_, dd, mm, yearStr] = standardDateMatch;
+      const year = yearStr.length === 2
+        ? parseInt(yearStr, 10) >= 70
+          ? 1900 + parseInt(yearStr, 10)
+          : 2000 + parseInt(yearStr, 10)
+        : parseInt(yearStr, 10);
+      return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${year}`;
+    }
+
+    // ISO date YYYY-MM-DD
+    const isoDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedValue);
+    if (isoDateMatch) {
+      const [_, year, month, day] = isoDateMatch;
+      return `${day}/${month}/${year}`;
+    }
+
+    // ISO datetime YYYY-MM-DDTHH:MM:SS with optional timezone
+    const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(trimmedValue);
+    if (isoDateTimeMatch) {
+      const [_, year, month, day, hourText, minute] = isoDateTimeMatch;
+      const hour = parseInt(hourText, 10);
+      const period = hour >= 12 ? 'PM' : 'AM';
+      const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+      return `${day}/${month}/${year} ${String(twelveHour).padStart(2, '0')}:${minute} ${period}`;
+    }
+
+    return ''; // invalid format
   }
 
   private static safeToNumber(value: string): number | string {
