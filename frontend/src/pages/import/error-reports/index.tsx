@@ -89,7 +89,7 @@ export default function ErrorReports() {
     setErrorMessage(null);
 
     try {
-      const data = await Proxy.Contact.Import.getErrorReports(50);
+      const data = await Proxy.Contact.Import.getErrorReports();
       setReports(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load saved error reports:', error);

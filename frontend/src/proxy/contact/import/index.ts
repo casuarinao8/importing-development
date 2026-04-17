@@ -36,7 +36,7 @@ export default class ImportManager {
 		return response.data;
 	}
 
-  static async getErrorReports(limit = 20) {
+  static async getErrorReports(limit = 50) {
     const response = await axios.get<APIImportErrorReportListItem[]>(`${this.route}/get_error_reports.php?limit=${limit}`);
     return response.data;
   }

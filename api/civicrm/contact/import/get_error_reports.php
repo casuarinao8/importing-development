@@ -16,7 +16,7 @@ if (!importing_error_reports_user_can_access()) {
   exit;
 }
 
-$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 20;
+$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
 $limit = max(1, min(100, $limit));
 
 $runId = isset($_GET['run_id']) ? sanitize_text_field($_GET['run_id']) : '';

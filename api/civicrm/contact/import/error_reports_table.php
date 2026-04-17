@@ -385,7 +385,7 @@ function importing_error_reports_upsert_rows($importRunId, array $errors, array 
 }
 
 
-function importing_error_reports_fetch_reports($limit = 20)
+function importing_error_reports_fetch_reports($limit = 50)
 {
   importing_error_reports_ensure_table();
 
