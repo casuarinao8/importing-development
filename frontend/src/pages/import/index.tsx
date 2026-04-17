@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { APIContact } from '../../proxy/contact/types';
 import { Proxy } from '../../proxy';
 import UploadCSV from './upload-csv';
@@ -7,7 +8,7 @@ import Results from './results';
 import { downloadCSV } from '../../utils/downloadCSV';
 import { ImportContact, ImportSummary, ImportResults, ValidationError, APIImportErrorReportError } from '../../proxy/contact/import/types';
 import { Button } from '@mui/material';
-import { Description, History } from '@mui/icons-material';
+import { History } from '@mui/icons-material';
 import { ContactValidator } from './components/validation-utils';
 import Progress from './components/progress';
 import Papa from 'papaparse';
@@ -15,8 +16,10 @@ import Wrapper from '../../components/wrapper';
 import { config } from '../../utils/config';
 
 type ImportStep = 'upload' | 'preview' | 'progress' | 'results';
+type BatchedImportResults = Omit<ImportResults, 'totalRecords'>;
 
 export default function DataImport() {
+  const navigate = useNavigate();
   const [contact, setContact] = useState<APIContact>();
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
   const [contacts, setContacts] = useState<ImportContact[]>([]);
@@ -63,6 +66,89 @@ export default function DataImport() {
     }
 
     return `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const createEmptyBatchedResults = (): BatchedImportResults => ({
+    newContacts: [],
+    updatedContacts: [],
+    contributions: [],
+    numberOfErrors: 0,
+    errors: []
+  });
+
+  const processImportInBatches = async (
+    importContacts: ImportContact[],
+    batchSize: number,
+    importRunId: string,
+    linkedRunId: string
+  ): Promise<BatchedImportResults> => {
+    const batches = chunkArray(importContacts, batchSize);
+    const allResults = createEmptyBatchedResults();
+
+    for (let i = 0; i < batches.length; i += 1) {
+      const batch = batches[i];
+      const data = await Proxy.Contact.Import.processImport(batch, i + 1, batchSize, importRunId, linkedRunId);
+
+      if (!data) throw new Error('Failed to process import');
+
+      allResults.newContacts = [...allResults.newContacts, ...data.newContacts];
+      allResults.updatedContacts = [...allResults.updatedContacts, ...data.updatedContacts];
+      allResults.contributions = [...allResults.contributions, ...data.contributions];
+      allResults.numberOfErrors += data.numberOfErrors || 0;
+      allResults.errors = [...allResults.errors, ...data.errors];
+
+      const processedSoFar = (i + 1) * batchSize;
+      setProcessedCount(Math.min(processedSoFar, importContacts.length));
+
+      if (i < batches.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+
+    return allResults;
+  };
+
+  const runImportFlow = async (importContacts: ImportContact[]) => {
+    const batchSize = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
+    const importRunId = createImportRunId();
+    const linkedRunId = currentLinkedRunId ?? importRunId;
+    setLoading(true);
+    setTotalContacts(importContacts.length);
+    setProcessedCount(0);
+    setCurrentStep('progress');
+
+    try {
+      const allResults = await processImportInBatches(importContacts, batchSize, importRunId, linkedRunId);
+
+      setResults({
+        totalRecords: importContacts.length,
+        ...allResults
+      });
+
+      setProcessedCount(importContacts.length);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setCurrentStep('results');
+    } catch (error) {
+      console.error('Import error:', error);
+      setResults({
+        totalRecords: importContacts.length,
+        newContacts: [],
+        updatedContacts: [],
+        contributions: [],
+        numberOfErrors: importContacts.length,
+        errors: importContacts.map((contact, index) => ({
+          contact: contact,
+          errors: [{
+            row: index + 1,
+            field: 'general',
+            message: 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+          }]
+        }))
+      });
+      setCurrentStep('results');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const buildValidationErrorPayload = (items: Array<{ contact: ImportContact; errors: ValidationError[] }>): APIImportErrorReportError[] => {
@@ -127,162 +213,11 @@ export default function DataImport() {
   };
 
   const handleImport = async () => {
-    const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
-    const importRunId = createImportRunId();
-    const linkedRunId = currentLinkedRunId ?? importRunId;
-    console.log('BATCH_SIZE:', BATCH_SIZE, 'env value:', import.meta.env.VITE_BATCH_SIZE);
-    setLoading(true);
-    setTotalContacts(contacts.length);
-    setProcessedCount(0);
-    setCurrentStep('progress');
-
-    const batches = chunkArray(contacts, BATCH_SIZE);
-    console.log('Number of batches:', batches.length, 'Total contacts:', contacts.length);
-     
-    const allResults = {
-      newContacts: [] as any[],
-      updatedContacts: [] as any[],
-      contributions: [] as any[],
-      numberOfErrors: 0,
-      errors: [] as any[]
-    }
-
-    try {
-      // const data = await Proxy.Contact.Import.processImport(contacts);
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        console.log(`Processing batch ${i + 1}/${batches.length} with ${batch.length} contacts`);
-        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
-        console.log(`Batch ${i + 1} result:`, data);
-
-        if (!data) throw new Error('Failed to process import');
-
-        allResults.newContacts = [...allResults.newContacts, ...data.newContacts];
-        allResults.updatedContacts = [...allResults.updatedContacts, ...data.updatedContacts];
-        allResults.contributions = [...allResults.contributions, ...data.contributions];
-        allResults.numberOfErrors += data.numberOfErrors || 0;
-        allResults.errors = [...allResults.errors, ...data.errors]; 
-        
-        // Update progress bar
-        const processedSoFar = (i + 1) * BATCH_SIZE;
-        setProcessedCount(Math.min(processedSoFar, contacts.length));
-        
-        // Small delay
-        if (i < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
-
-      setResults({
-        totalRecords: totalContacts,
-        ...allResults
-      });
-      
-      // delay for progress bar to reach 100%
-      setProcessedCount(contacts.length);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setCurrentStep('results');
-
-    } catch (error) {
-      console.error('Import error:', error);
-      // Set error results
-      setResults({
-        totalRecords: totalContacts,
-        newContacts: [],
-        updatedContacts: [],
-        contributions: [],
-        numberOfErrors: contacts.length,
-        errors: contacts.map((contact, index) => ({
-          contact: contact,
-          errors: [{
-            row: index + 1,
-            field: 'general',
-            message: 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error')  
-          }]
-        }))
-      });
-      setCurrentStep('results');
-    } finally {
-      setLoading(false);
-    }
+    await runImportFlow(contacts);
   };
 
   const handleImportValidOnly = async () => {
-    const BATCH_SIZE = Number(import.meta.env.VITE_BATCH_SIZE) || 50;
-    const importRunId = createImportRunId();
-    const linkedRunId = currentLinkedRunId ?? importRunId;
-    setLoading(true);
-    setTotalContacts(validContacts.length);
-    setProcessedCount(0);
-    setCurrentStep('progress');
-    
-    const batches = chunkArray(validContacts, BATCH_SIZE);
-     
-    const allResults = {
-      newContacts: [] as any[],
-      updatedContacts: [] as any[],
-      contributions: [] as any[],
-      numberOfErrors: 0,
-      errors: [] as any[]
-    }
-    
-    try {
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const data = await Proxy.Contact.Import.processImport(batch, i + 1, BATCH_SIZE, importRunId, linkedRunId);
-
-        if (!data) throw new Error('Failed to process import');
-        
-        allResults.newContacts = [...allResults.newContacts, ...data.newContacts];
-        allResults.updatedContacts = [...allResults.updatedContacts, ...data.updatedContacts];
-        allResults.contributions = [...allResults.contributions, ...data.contributions];
-        allResults.numberOfErrors += data.numberOfErrors || 0;
-        allResults.errors = [...allResults.errors, ...data.errors];
-        
-        // Update progress bar
-        const processedSoFar = (i + 1) * BATCH_SIZE;
-        setProcessedCount(Math.min(processedSoFar, validContacts.length));
-        
-        // Small delay
-        if (i < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
-      
-      setResults({
-        totalRecords: totalContacts,
-        ...allResults
-      });
-
-      // delay for progress bar to reach 100%
-      setProcessedCount(validContacts.length);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setCurrentStep('results');
-
-    } catch (error) {
-      console.error('Import error:', error);
-      // Set error results
-      setResults({
-        totalRecords: totalContacts,
-        newContacts: [],
-        updatedContacts: [],
-        contributions: [],
-        numberOfErrors: contacts.length,
-        errors: [
-          ...contacts.map((contact, index) => ({
-            contact: contact,
-            errors: [{
-              row: index + 1,
-              field: 'general',
-              message: 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error')
-            }]
-          })),
-        ]
-      });
-      setCurrentStep('results');
-    } finally {
-      setLoading(false);
-    }
+    await runImportFlow(validContacts);
   };
 
   const handleDownloadReview = () => {
@@ -336,7 +271,10 @@ export default function DataImport() {
     setCurrentStep('upload');
     setCurrentLinkedRunId(null);
     setContacts([]);
+    setValidContacts([]);
     setInvalidContacts([]);
+    setProcessedCount(0);
+    setTotalContacts(0);
     setContinueButton(false);
     setIsValidating(false);
     setValidationPromise(null);
@@ -395,11 +333,10 @@ export default function DataImport() {
     switch (currentStep) {
       case 'upload':
         return <>
-          <div className='my-4 flex justify-between'>
-            <div className='flex gap-2'>
-              <ActionButton actionName='Saved Error Reports' iconName={<History />} variant='outlined' onClick={() => navigate('/import/error-reports')} />
-            </div>
-            <ActionButton actionName='Download Template' iconName={<Description />} onClick={handleDownloadTemplate} />
+          <div className='my-4 flex justify-start'>
+            <Button variant='outlined' startIcon={<History />} onClick={() => navigate('/import/error-reports')}>
+              Saved Error Reports
+            </Button>
           </div>
             <UploadCSV onUpload={handleUpload} setContinueButton={setContinueButton} />
             {continueButton && <div className='my-4 flex justify-end'>
@@ -452,7 +389,7 @@ export default function DataImport() {
   return (
     <Wrapper loading={!contact}>
       <div className='p-4 md:px-6 max-w-[1200px] mx-auto'>
-        <h1 className='text-2xl font-semibold align-left mb-6'>{config.IMPORT_TITLE}</h1>
+        <h1 className='text-2xl font-semibold text-left mb-6'>{config.IMPORT_TITLE}</h1>
         {renderStep()}
       </div>
     </Wrapper>

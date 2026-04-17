@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APIImportSettings, APISettings, APISaveValidationErrorReportPayload } from './types';
+import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APISaveValidationErrorReportPayload } from './types';
 import { config } from '../../../utils/config';
 
 export default class ImportManager {
@@ -25,11 +25,6 @@ export default class ImportManager {
     };
 
     return results;
-  }
-
-  static async getSettingByName(name: string) {
-    const response = await axios.get<APISettings>(`${this.route}/get_setting_by_name.php?name=${encodeURIComponent(name)}`);
-    return response.data;
   }
 
   static async getDuplicateTransactionIds(transactionIds: string[]) {
