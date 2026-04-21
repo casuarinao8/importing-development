@@ -499,7 +499,7 @@ export class ContactValidator {
           contribution_status_id: 0 as unknown as number,
           total_amount: 0,
           source: '',
-          "Additional_Contribution_Details.Campaign": '',
+           "Additional_Contribution_Details.Campaign": null,
           receive_date: '',
           payment_instrument_id: null,
           trxn_id: '',
@@ -618,10 +618,14 @@ export class ContactValidator {
           case 'check_number':
             contact.contribution.check_number = value;
             break;
-          case 'campaign code':
-          case 'campaign_code':
-            contact.contribution["Additional_Contribution_Details.Campaign"] = value;
-            break;
+           case 'campaign code':
+           case 'campaign_code':
+             {
+               const converted = this.safeToNumberOrNull(value);
+               contact.contribution["Additional_Contribution_Details.Campaign"] =
+                 typeof converted === 'number' ? converted : null;
+             }
+             break;
           case 'donation platform code':
           case 'donation_platform_code':
             if (value) {
