@@ -45,7 +45,6 @@ export interface Contribution {
   "Additional_Contribution_Details.Projects": string;
   "Additional_Contribution_Details.Account_Code": string;
   "Additional_Contribution_Details.Transaction_Date_Bank_In_Date": string;
-  "Additional_Contribution_Details.Transaction_ID_Bank_In_Date"?: string;
   "Additional_Contribution_Details.Bank_Reference_No": string;
   "Donation_In_Kind_Additional_Details.Items_donated": string;
   "Donation_In_Kind_Additional_Details.Quantity": number | null;

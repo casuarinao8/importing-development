@@ -12,11 +12,9 @@ export class ContactValidator {
     'resources',
     'projects',
     'account code',
-    'transaction date / bank-in date',
+    'transaction date / bank in date',
     'transaction id / bank in date',
     'transaction id/bank in date',
-    'transaction id / bank-in date',
-    'transaction id/bank-in date',
     'bank reference no',
   ];
 
@@ -195,6 +193,19 @@ export class ContactValidator {
       } else contribution["Additional_Contribution_Details.Received_Date"] = dateValue;
     }
 
+    // Change Transaction Date / Bank-in Date format
+    let transaction_date_bank_in_date = contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"];
+    if (transaction_date_bank_in_date) {
+      let dateValue = this.convertToISO(transaction_date_bank_in_date);
+      if (dateValue === '') {
+        errors.push({
+          row: rowIndex,
+          field: 'transaction_date_bank_in_date',
+          message: 'Transaction date / Bank-in date format is invalid'
+        });
+      } else contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"] = dateValue;
+    }
+
     if (contact.import_template === 'MINDS') {
       this.validateMindsContribution(contribution as Record<string, any>, rowIndex, errors);
     }
@@ -249,8 +260,13 @@ export class ContactValidator {
   }
 
   private static convertToISO(dateStr: string): string {
+    const trimmed = dateStr.trim();
+    // Already ISO (yyyy-mm-dd) – pass through
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
     // d/m/yyyy or dd/mm/yyyy with optional time (stripped)
-    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(dateStr.trim());
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(trimmed);
     if (!match) return ''; // invalid format
 
     const [_, dd, mm, yyyy] = match;
@@ -483,11 +499,9 @@ export class ContactValidator {
           case 'account code':
             contact.contribution["Additional_Contribution_Details.Account_Code"] = value;
             break;
-          case 'transaction date / bank-in date':
+          case 'transaction date / bank in date':
           case 'transaction id / bank in date':
           case 'transaction id/bank in date':
-          case 'transaction id / bank-in date':
-          case 'transaction id/bank-in date':
             contact.contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"] = value;
             break;
           case 'bank reference no':
@@ -544,6 +558,7 @@ export class ContactValidator {
       { key: 'Additional_Contribution_Details.Resources', label: 'Resources' },
       { key: 'Additional_Contribution_Details.Projects', label: 'Projects' },
       { key: 'Additional_Contribution_Details.Account_Code', label: 'Account Code' },
+      { key: 'Additional_Contribution_Details.Transaction_Date_Bank_In_Date', label: 'Transaction date / Bank-in Date' },
     ];
 
     requiredMindsFields.forEach(field => {

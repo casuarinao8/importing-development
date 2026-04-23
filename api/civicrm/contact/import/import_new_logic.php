@@ -184,7 +184,7 @@ try {
     $contribution = $contact['contribution'] ?? null;
     $contactSuccess = false;
 
-    if ($contribution) {
+    if ($contribution && ($contact['import_template'] ?? '') === 'MINDS') {
       $mindsValidationErrors = validateMindsContribution($contribution);
       if (!empty($mindsValidationErrors)) {
         $errors[] = [
@@ -376,7 +376,8 @@ try {
           'Additional_Contribution_Details.Received_Date' => $contribution['Additional_Contribution_Details.Received_Date'],
           'Additional_Contribution_Details.Payment_Platform' => $contribution['Additional_Contribution_Details.Payment_Platform'],
           'Additional_Contribution_Details.Recurring_Donation' => $contribution['Additional_Contribution_Details.Recurring_Donation'],
-          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks']
+          'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'],
+'Additional_Contribution_Details.Transaction_date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? ''
         ], $mindsContributionApiValues, [
           'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? '',
           'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? null
@@ -407,10 +408,7 @@ try {
           'resources' => $contribution['Additional_Contribution_Details.Resources'] ?? '',
           'projects' => $contribution['Additional_Contribution_Details.Projects'] ?? '',
           'account_code' => $contribution['Additional_Contribution_Details.Account_Code'] ?? '',
-          'transaction_date_bank_in_date' => getContributionValueByKeys($contribution, [
-            'Additional_Contribution_Details.Transaction_Date_Bank_In_Date',
-            'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'
-          ]),
+          'transaction_date_bank_in_date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? '',
           'bank_reference_no' => $contribution['Additional_Contribution_Details.Bank_Reference_No'] ?? ''
         ];
       }
@@ -449,10 +447,7 @@ try {
           'Additional_Contribution_Details.Resources' => $contribution['Additional_Contribution_Details.Resources'] ?? "",
           'Additional_Contribution_Details.Projects' => $contribution['Additional_Contribution_Details.Projects'] ?? "",
           'Additional_Contribution_Details.Account_Code' => $contribution['Additional_Contribution_Details.Account_Code'] ?? "",
-          'Additional_Contribution_Details.Transaction_Date_Bank_In_Date' => getContributionValueByKeys($contribution, [
-            'Additional_Contribution_Details.Transaction_Date_Bank_In_Date',
-            'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'
-          ]),
+          'Additional_Contribution_Details.Transaction_Date_Bank_In_Date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? '',
           'Additional_Contribution_Details.Bank_Reference_No' => $contribution['Additional_Contribution_Details.Bank_Reference_No'] ?? "",
           'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? "",
           'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? ""
@@ -652,6 +647,10 @@ function validateMindsContribution($contribution)
     [
       'keys' => ['Additional_Contribution_Details.Account_Code'],
       'label' => 'Account Code'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'],
+      'label' => 'Transaction date / Bank-in Date'
     ]
   ];
 
@@ -698,13 +697,19 @@ function getAdditionalContributionFieldMetadata()
   $fieldMetadata = [];
   try {
     $fields = \Civi\Api4\CustomField::get(FALSE)
-      ->addSelect('name', 'html_type', 'option_group_id')
+      ->addSelect('id', 'name', 'html_type', 'option_group_id')
       ->addWhere('custom_group_id:name', '=', 'Additional_Contribution_Details')
       ->execute();
 
     foreach ($fields as $field) {
       $apiFieldKey = 'Additional_Contribution_Details.' . $field['name'];
       $fieldMetadata[$apiFieldKey] = [
+        'html_type' => $field['html_type'] ?? null,
+        'option_group_id' => $field['option_group_id'] ?? null
+      ];
+      // Also index by custom_<id> for reliable fallback resolution
+      $customIdKey = 'custom_' . $field['id'];
+      $fieldMetadata[$customIdKey] = [
         'html_type' => $field['html_type'] ?? null,
         'option_group_id' => $field['option_group_id'] ?? null
       ];
@@ -824,7 +829,7 @@ function buildMindsContributionApiValues(array $contribution)
     ],
     [
       'input_keys' => ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'],
-      'api_candidates' => ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date']
+      'api_candidates' => ['Additional_Contribution_Details.Transaction_date', 'Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date', 'custom_564']
     ],
     [
       'input_keys' => ['Additional_Contribution_Details.Bank_Reference_No'],
