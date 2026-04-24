@@ -5,9 +5,18 @@ export class ContactValidator {
   static validateContact(contact: ImportContact, rowIndex: number, existingTransactionIds: { id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]): ValidationResult {
     const errors: ValidationError[] = [];
     const contribution = contact.contribution;
+    const contactType = (contact.contact_type ?? '').trim();
+    const email = (contact.email_primary ?? '').trim();
+    const phone = (contact.phone_primary ?? '').trim();
+    const transactionId = (contribution.trxn_id ?? '').trim();
+
+    contact.contact_type = contactType;
+    contact.email_primary = email;
+    contact.phone_primary = phone;
+    contribution.trxn_id = transactionId;
 
     // Required field validations (contact type only)
-    if (!contact.contact_type?.trim()) {
+    if (!contactType) {
       errors.push({
         row: rowIndex,
         field: 'contact_type',
@@ -15,7 +24,7 @@ export class ContactValidator {
       });
     } else {
       const validTypes = ['Individual', 'Organization'];
-      if (!validTypes.includes(contact.contact_type.trim())) {
+      if (!validTypes.includes(contactType)) {
         errors.push({
           row: rowIndex,
           field: 'contact_type',
@@ -24,7 +33,7 @@ export class ContactValidator {
       }
     }
 
-    if (contact.email_primary && !this.isValidEmail(contact.email_primary.trim())) {
+    if (email && !this.isValidEmail(email)) {
       errors.push({
         row: rowIndex,
         field: 'email',
@@ -32,39 +41,79 @@ export class ContactValidator {
       });
     }
 
+    if (phone && !this.isValidPhone(phone)) {
+      errors.push({
+        row: rowIndex,
+        field: 'phone',
+        message: 'Invalid phone format'
+      });
+    }
+
     // Contribution Required field validations
     // Amount
-    if (!contribution.total_amount) {
+    if (this.isEmptyValue(contribution.total_amount)) {
       errors.push({
         row: rowIndex,
         field: 'total_amount',
         message: 'Amount is required'
       });
-    } else if (isNaN(contribution.total_amount)) {
-      errors.push({
-        row: rowIndex,
-        field: 'total_amount',
-        message: 'Amount is not a number'
-      });
+    } else {
+      const parsedAmount = this.toNumberOrNull(contribution.total_amount);
+      if (parsedAmount === null) {
+        errors.push({
+          row: rowIndex,
+          field: 'total_amount',
+          message: 'Amount is not a number'
+        });
+      } else if (parsedAmount <= 0) {
+        errors.push({
+          row: rowIndex,
+          field: 'total_amount',
+          message: 'Amount must be greater than 0'
+        });
+      } else {
+        contribution.total_amount = parsedAmount;
+      }
     }
 
     // Financial Type
-    if (isNaN(Number(contribution.financial_type_id))) {
-      errors.push({
-        row: rowIndex,
-        field: 'financial_type',
-        message: 'Financial type id is not a number'
-      });
-    } else if (!contribution.financial_type_id || contribution.financial_type_id === 0) {
+    const financialTypeId = this.toIntegerOrNull(contribution.financial_type_id);
+    if (this.isEmptyValue(contribution.financial_type_id) || (financialTypeId !== null && financialTypeId <= 0)) {
       errors.push({
         row: rowIndex,
         field: 'financial_type',
         message: 'Financial type code is required'
       });
+    } else if (financialTypeId === null) {
+      errors.push({
+        row: rowIndex,
+        field: 'financial_type',
+        message: 'Financial type id is not a number'
+      });
+    } else {
+      contribution.financial_type_id = financialTypeId;
+    }
+
+    // Contribution Status
+    const contributionStatusId = this.toIntegerOrNull(contribution.contribution_status_id);
+    if (this.isEmptyValue(contribution.contribution_status_id) || (contributionStatusId !== null && contributionStatusId <= 0)) {
+      errors.push({
+        row: rowIndex,
+        field: 'contribution_status',
+        message: 'Contribution status is required'
+      });
+    } else if (contributionStatusId === null) {
+      errors.push({
+        row: rowIndex,
+        field: 'contribution_status',
+        message: 'Contribution status code is not a number'
+      });
+    } else {
+      contribution.contribution_status_id = contributionStatusId;
     }
 
     // Contribution Date
-    if (!contribution.receive_date) {
+    if (!contribution.receive_date?.trim()) {
       errors.push({
         row: rowIndex,
         field: 'receive_date',
@@ -81,33 +130,27 @@ export class ContactValidator {
       } else contribution.receive_date = dateValue;
     }
 
-    // Contribution Status
-    if (!contribution.contribution_status_id) {
-      errors.push({
-        row: rowIndex,
-        field: 'contribution_status',
-        message: 'Contribution status is required'
-      });
-    }
-
     // Payment Method
-    if (isNaN(Number(contribution.payment_instrument_id))) {
-      errors.push({
-        row: rowIndex,
-        field: 'payment_instrument',
-        message: 'Payment method code is not a number'
-      });
-    } else if (!contribution.payment_instrument_id || contribution.payment_instrument_id === 0) {
+    const paymentInstrumentId = this.toIntegerOrNull(contribution.payment_instrument_id);
+    if (this.isEmptyValue(contribution.payment_instrument_id) || (paymentInstrumentId !== null && paymentInstrumentId <= 0)) {
       errors.push({
         row: rowIndex,
         field: 'payment_instrument',
         message: 'Payment method code is required'
       });
+    } else if (paymentInstrumentId === null) {
+      errors.push({
+        row: rowIndex,
+        field: 'payment_instrument',
+        message: 'Payment method code is not a number'
+      });
+    } else {
+      contribution.payment_instrument_id = paymentInstrumentId;
     }
 
     // Check for duplicate transaction ID
-    if (contribution.trxn_id) {
-      const duplicateTransactionId = existingTransactionIds.find(item => item.trxn_id === contribution.trxn_id);
+    if (transactionId) {
+      const duplicateTransactionId = existingTransactionIds.find(item => item.trxn_id?.trim() === transactionId);
       if (duplicateTransactionId) {
         errors.push({
           row: rowIndex,
@@ -119,25 +162,35 @@ export class ContactValidator {
 
     // Platform
     const platform = contribution["Additional_Contribution_Details.Payment_Platform"];
-    if (platform !== null && platform !== undefined) {
-      if (isNaN(Number(platform))) {
+    if (this.isEmptyValue(platform)) {
+      contribution["Additional_Contribution_Details.Payment_Platform"] = null;
+    } else {
+      const parsedPlatform = this.toIntegerOrNull(platform);
+      if (parsedPlatform === null || parsedPlatform <= 0) {
         errors.push({
           row: rowIndex,
           field: 'platform',
           message: 'Platform code is not a number'
         });
+      } else {
+        contribution["Additional_Contribution_Details.Payment_Platform"] = parsedPlatform;
       }
     }
 
     // Frequency
     const frequency = contribution["Additional_Contribution_Details.Recurring_Donation"];
-    if (frequency !== null && frequency !== undefined) {
-      if (isNaN(Number(frequency))) {
+    if (this.isEmptyValue(frequency)) {
+      contribution["Additional_Contribution_Details.Recurring_Donation"] = null;
+    } else {
+      const parsedFrequency = this.toIntegerOrNull(frequency);
+      if (parsedFrequency === null || parsedFrequency <= 0) {
         errors.push({
           row: rowIndex,
           field: 'frequency',
           message: 'Frequency code is not a number'
         });
+      } else {
+        contribution["Additional_Contribution_Details.Recurring_Donation"] = parsedFrequency;
       }
     }
 
@@ -217,18 +270,193 @@ export class ContactValidator {
   }
 
   private static isValidEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || email.length > 254) {
+      return false;
+    }
 
-    return email !== '' ? emailRegex.test(email) : true;
+    const parts = email.split('@');
+    if (parts.length !== 2) {
+      return false;
+    }
+
+    const [localPart, domainPart] = parts;
+    if (!localPart || !domainPart || localPart.length > 64) {
+      return false;
+    }
+
+    if (localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+      return false;
+    }
+
+    if (!/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/.test(localPart)) {
+      return false;
+    }
+
+    if (domainPart.includes('..')) {
+      return false;
+    }
+
+    const labels = domainPart.split('.');
+    if (labels.length < 2) {
+      return false;
+    }
+
+    const validLabels = labels.every((label) => (
+      label.length > 0 &&
+      label.length <= 63 &&
+      /^[A-Za-z0-9-]+$/.test(label) &&
+      !label.startsWith('-') &&
+      !label.endsWith('-')
+    ));
+
+    if (!validLabels) {
+      return false;
+    }
+
+    const tld = labels[labels.length - 1];
+    return /^(?:[A-Za-z]{2,63}|xn--[A-Za-z0-9-]{2,59})$/.test(tld);
+  }
+
+  private static isValidPhone(phone: string): boolean {
+    if (!phone) {
+      return false;
+    }
+
+    if (!/^[+\d\s().-]+(?:\s*(?:ext\.?|extension|x)\s*\d+)?$/i.test(phone)) {
+      return false;
+    }
+
+    const withoutExtension = phone.replace(/(?:\s*(?:ext\.?|extension|x)\s*\d+)$/i, '').trim();
+    const plusCount = (withoutExtension.match(/\+/g) ?? []).length;
+    if (plusCount > 1 || (plusCount === 1 && !withoutExtension.startsWith('+'))) {
+      return false;
+    }
+
+    const digits = withoutExtension.replace(/\D/g, '');
+    return digits.length >= 7 && digits.length <= 15;
+  }
+
+  private static isEmptyValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() === '';
+    }
+
+    return false;
+  }
+
+  private static toNumberOrNull(value: unknown): number | null {
+    if (this.isEmptyValue(value)) {
+      return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private static toIntegerOrNull(value: unknown): number | null {
+    const parsed = this.toNumberOrNull(value);
+    if (parsed === null || !Number.isInteger(parsed)) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  private static isValidDateParts(day: number, month: number, year: number): boolean {
+    if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) {
+      return false;
+    }
+
+    const check = new Date(Date.UTC(year, month - 1, day));
+    return (
+      check.getUTCFullYear() === year &&
+      check.getUTCMonth() === month - 1 &&
+      check.getUTCDate() === day
+    );
+  }
+
+  private static isValidTimeParts(hour: number, minute: number, second: number | null, period: string | undefined): boolean {
+    if (minute < 0 || minute > 59) {
+      return false;
+    }
+
+    if (second !== null && (second < 0 || second > 59)) {
+      return false;
+    }
+
+    if (period) {
+      return hour >= 1 && hour <= 12;
+    }
+
+    return hour >= 0 && hour <= 23;
   }
 
   private static convertToISO(dateStr: string): string {
-    // d/m/yyyy or dd/mm/yyyy with optional time (stripped)
-    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(dateStr.trim());
-    if (!match) return ''; // invalid format
+    const trimmedValue = dateStr.trim();
+    if (!trimmedValue) {
+      return '';
+    }
 
-    const [_, dd, mm, yyyy] = match;
-    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+    // DD/MM/YYYY or DD/MM/YY with optional time
+    const standardDateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?)?$/i.exec(trimmedValue);
+    if (standardDateMatch) {
+      const [_, dd, mm, yearStr, hourText, minuteText, secondText, periodText] = standardDateMatch;
+      const year = yearStr.length === 2
+        ? parseInt(yearStr, 10) >= 70
+          ? 1900 + parseInt(yearStr, 10)
+          : 2000 + parseInt(yearStr, 10)
+        : parseInt(yearStr, 10);
+
+      const day = parseInt(dd, 10);
+      const month = parseInt(mm, 10);
+      if (!this.isValidDateParts(day, month, year)) {
+        return '';
+      }
+
+      if (hourText && minuteText) {
+        const hour = parseInt(hourText, 10);
+        const minute = parseInt(minuteText, 10);
+        const second = secondText ? parseInt(secondText, 10) : null;
+        const period = periodText?.toUpperCase();
+        if (!this.isValidTimeParts(hour, minute, second, period)) {
+          return '';
+        }
+      }
+
+      return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${year}`;
+    }
+
+    // ISO date YYYY-MM-DD
+    const isoDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedValue);
+    if (isoDateMatch) {
+      const [_, year, month, day] = isoDateMatch;
+      if (!this.isValidDateParts(parseInt(day, 10), parseInt(month, 10), parseInt(year, 10))) {
+        return '';
+      }
+      return `${day}/${month}/${year}`;
+    }
+
+    // ISO datetime YYYY-MM-DDTHH:MM:SS with optional timezone
+    const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(trimmedValue);
+    if (isoDateTimeMatch) {
+      const [_, year, month, day, hourText, minute] = isoDateTimeMatch;
+      const hour = parseInt(hourText, 10);
+      if (!this.isValidDateParts(parseInt(day, 10), parseInt(month, 10), parseInt(year, 10))) {
+        return '';
+      }
+      if (!this.isValidTimeParts(hour, parseInt(minute, 10), null, undefined)) {
+        return '';
+      }
+      const period = hour >= 12 ? 'PM' : 'AM';
+      const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+      return `${day}/${month}/${year} ${String(twelveHour).padStart(2, '0')}:${minute} ${period}`;
+    }
+
+    return ''; // invalid format
   }
 
   private static safeToNumber(value: string): number | string {
@@ -247,7 +475,7 @@ export class ContactValidator {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const headers = this.parseCSVLine(lines[0]).map((h) => h.replace(/\uFEFF/g, '').trim().toLowerCase());
     const contacts: ImportContact[] = [];
 
     for (let i = 1; i < lines.length; i++) {
@@ -271,7 +499,7 @@ export class ContactValidator {
           contribution_status_id: 0 as unknown as number,
           total_amount: 0,
           source: '',
-          "Additional_Contribution_Details.Campaign": '',
+           "Additional_Contribution_Details.Campaign": null,
           receive_date: '',
           payment_instrument_id: null,
           trxn_id: '',
@@ -390,10 +618,14 @@ export class ContactValidator {
           case 'check_number':
             contact.contribution.check_number = value;
             break;
-          case 'campaign code':
-          case 'campaign_code':
-            contact.contribution["Additional_Contribution_Details.Campaign"] = value;
-            break;
+           case 'campaign code':
+           case 'campaign_code':
+             {
+               const converted = this.safeToNumberOrNull(value);
+               contact.contribution["Additional_Contribution_Details.Campaign"] =
+                 typeof converted === 'number' ? converted : null;
+             }
+             break;
           case 'donation platform code':
           case 'donation_platform_code':
             if (value) {
@@ -454,6 +686,11 @@ export class ContactValidator {
       const char = line[i];
 
       if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i += 1;
+          continue;
+        }
         inQuotes = !inQuotes;
       } else if (char === ',' && !inQuotes) {
         result.push(current);

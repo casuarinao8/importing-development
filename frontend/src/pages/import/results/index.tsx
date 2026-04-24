@@ -57,15 +57,14 @@ export default function Results({
 
       {/* Buttons */}
       <Box className="flex flex-wrap justify-between mt-6 pt-6 border-t gap-2" sx={{alignItems: 'flex-end'}}>
-        <Button 
-          variant="outlined" 
-          startIcon={<ArrowBack />}
-          onClick={onBackToImport}
-        >
-          Start Another Import
-        </Button>
-
-        <div className='flex gap-2'>
+        <div className='flex flex-wrap gap-2'>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBack />}
+            onClick={onBackToImport}
+          >
+            Start Another Import
+          </Button>
           <Button
             variant="outlined"
             startIcon={<History />}
@@ -73,17 +72,17 @@ export default function Results({
           >
             Saved Error Reports
           </Button>
-
-          {hasSuccess && (
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => {window.open(config.LATEST_DONATIONS_URL, '_blank')}}
-            >
-              Latest Imported Donations Report
-            </Button>
-          )}
         </div>
+
+        {hasSuccess && (
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {window.open(config.LATEST_DONATIONS_URL, '_blank', 'noopener,noreferrer')}}
+          >
+            Latest Imported Donations Report
+          </Button>
+        )}
       </Box>
     </>
   ;

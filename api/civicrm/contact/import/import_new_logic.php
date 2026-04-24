@@ -443,9 +443,9 @@ try {
       $errors[] = [
         'contact' => $contactResponse,
         'field' => 'general',
-        'message' => 'Contact Import failed at row ' . ($index + 2) . ': ' . $e->getMessage() . '. Contribution is not imported for this contact.'
+        'message' => 'Contact Import failed at row ' . ($index + 1) . ': ' . $e->getMessage() . '. Contribution is not imported for this contact.'
       ];
-      error_log("[IMPORTING] Contact Import failed at row " . ($index + 2) . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
+      error_log("[IMPORTING] Contact Import failed at row " . ($index + 1) . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
       $contactSuccess = false;
       continue;
     }
