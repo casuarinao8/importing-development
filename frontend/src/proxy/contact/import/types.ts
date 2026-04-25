@@ -60,13 +60,88 @@ export interface ImportSummary {
   fileSize: string;
 }
 
+export interface ImportedContactResult {
+  contact_id: number | null;
+  contribution_id?: number | null;
+  label: string;
+  contact_type: string;
+  prefix_id: number | string | null;
+  name: string;
+  preferred_name: string;
+  external_identifier: string;
+  email_primary: string;
+  phone_primary: string;
+  street_address: string;
+  unit_floor_number: string;
+  postal_code: string;
+  row: number;
+}
+
+export interface ImportedContributionResult {
+  contribution_id: number;
+  contact_id: number | null;
+  name: string;
+  row: number | null;
+  financial_type: string;
+  total_amount: number | string;
+  receive_date: string;
+  source: string;
+  trxn_id: string;
+  campaign_name: string | number | null;
+  platform: string | number | null;
+  frequency: string | number | null;
+  remarks: string;
+  imported_date: string;
+  received_date: string | null;
+}
+
+export interface ImportProcessErrorContactContribution {
+  trxn_id?: string | null;
+  total_amount?: number | string | null;
+  receive_date?: string | null;
+  financial_type?: string | null;
+  imported_date?: string | null;
+  received_date?: string | null;
+  "Additional_Contribution_Details.Imported_Date"?: string | null;
+  "Additional_Contribution_Details.Received_Date"?: string | null;
+}
+
+export interface ImportProcessErrorContact {
+  contact_id?: number | null;
+  row?: number | null;
+  label?: string | null;
+  name?: string | null;
+  contact_type?: string | null;
+  external_identifier?: string | null;
+  email_primary?: string | null;
+  phone_primary?: string | null;
+  contribution?: ImportProcessErrorContactContribution;
+}
+
+export interface ImportProcessError {
+  row?: number | null;
+  row_end?: number | null;
+  field: string;
+  message: string;
+  contact?: ImportProcessErrorContact;
+}
+
+export interface APIProcessImportResponse {
+  importRunId?: string;
+  newContacts: ImportedContactResult[];
+  updatedContacts: ImportedContactResult[];
+  contributions: ImportedContributionResult[];
+  numberOfErrors: number;
+  errors: ImportProcessError[];
+}
+
 export interface ImportResults {
   totalRecords: number;
-  newContacts: any[];
-  updatedContacts: any[];
-  contributions: any[];
+  newContacts: ImportedContactResult[];
+  updatedContacts: ImportedContactResult[];
+  contributions: ImportedContributionResult[];
   numberOfErrors: number;
-  errors: any[];
+  errors: ImportProcessError[];
 }
 
 export interface APIImportErrorReportUser {

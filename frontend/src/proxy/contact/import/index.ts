@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APISaveValidationErrorReportPayload } from './types';
+import { ImportContact, ImportResults, APIProcessImportResponse, APIImportErrorReport, APIImportErrorReportListItem, APISaveValidationErrorReportPayload } from './types';
 import { config } from '../../../utils/config';
 
 export default class ImportManager {
@@ -9,7 +9,7 @@ export default class ImportManager {
 
     const response = await axios.create({
       headers: { 'Content-Type': 'application/json' }
-    }).post<{ newContacts: any[]; updatedContacts: any[]; contributions: any[]; numberOfErrors: number; errors: { contact: ImportContact; errors: ValidationError[] }[] }>(
+    }).post<APIProcessImportResponse>(
       `${this.route}/import_new_logic.php`,
       { contacts, batchNumber, batchSize, importRunId, linkedRunId }
     );

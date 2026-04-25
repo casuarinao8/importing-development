@@ -137,12 +137,26 @@ export default function DataImport() {
         contributions: [],
         numberOfErrors: importContacts.length,
         errors: importContacts.map((contact, index) => ({
-          contact: contact,
-          errors: [{
-            row: index + 1,
-            field: 'general',
-            message: 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error')
-          }]
+          row: index + 2,
+          field: 'general',
+          message: 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+          contact: {
+            row: index + 2,
+            label: 'Import Failure',
+            name: contact.name ?? null,
+            contact_type: contact.contact_type ?? null,
+            external_identifier: contact.external_identifier ?? null,
+            email_primary: contact.email_primary ?? null,
+            phone_primary: contact.phone_primary ?? null,
+            contribution: {
+              trxn_id: contact.contribution?.trxn_id ?? null,
+              total_amount: contact.contribution?.total_amount ?? null,
+              receive_date: contact.contribution?.receive_date ?? null,
+              financial_type: contact.contribution?.financial_type ?? null,
+              'Additional_Contribution_Details.Imported_Date': contact.contribution?.['Additional_Contribution_Details.Imported_Date'] ?? null,
+              'Additional_Contribution_Details.Received_Date': contact.contribution?.['Additional_Contribution_Details.Received_Date'] ?? null,
+            },
+          },
         }))
       });
       setCurrentStep('results');

@@ -195,11 +195,28 @@ try {
     return null;
   }
 
+  function getCsvRowNumber($index, $batchNumber, $batchSize)
+  {
+    $row = (int) $index + 2; // account for header row
+
+    if (is_numeric($batchNumber) && is_numeric($batchSize)) {
+      $batchNumber = (int) $batchNumber;
+      $batchSize = (int) $batchSize;
+
+      if ($batchNumber > 0 && $batchSize > 0) {
+        $row += ($batchNumber - 1) * $batchSize;
+      }
+    }
+
+    return $row;
+  }
+
   // Create/Update contacts and collect id for bulk contribution creation
   $contributionRecords = [];
   $contactContributionMap = [];
 
   foreach ($contacts as $index => $contact) {
+    $rowNumber = getCsvRowNumber($index, $batchNumber, $batchSize);
     $contribution = $contact['contribution'] ?? null;
     $contactSuccess = false;
 
@@ -210,7 +227,7 @@ try {
       if ($existingContact) {
         // UPDATE EXISTING CONTACT
         $contactId = $existingContact['id'];
-        error_log("[IMPORTING] Row " . ($index + 1) . ": Updating existing contact ID " . $contactId . " - " . $contact['name'] . " (ext_id: " . ($contact['external_identifier'] ?? 'none') . ")");
+        error_log("[IMPORTING] Row " . $rowNumber . ": Updating existing contact ID " . $contactId . " - " . $contact['name'] . " (ext_id: " . ($contact['external_identifier'] ?? 'none') . ")");
 
         $query = \Civi\Api4\Contact::update(false)
           ->addWhere('id', '=', $contactId)
@@ -282,12 +299,12 @@ try {
 
         $result = $query->execute();
 
-        $updatedContacts[] = buildContactResponse($contactId, $contact, $index, 'Updated');
+        $updatedContacts[] = buildContactResponse($contactId, $contact, $rowNumber, 'Updated');
         $contactSuccess = true;
 
       } else {
         // CREATE NEW CONTACT
-        error_log("[IMPORTING] Row " . ($index + 1) . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
+        error_log("[IMPORTING] Row " . $rowNumber . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
         $query = \Civi\Api4\Contact::create(false)
           ->addValue('contact_type', $contact['contact_type']);
 
@@ -338,9 +355,9 @@ try {
 
         $result = $query->execute();
         $contactId = $result[0]['id'];
-        error_log("[IMPORTING] Row " . ($index + 1) . ": New contact created with ID " . $contactId);
+        error_log("[IMPORTING] Row " . $rowNumber . ": New contact created with ID " . $contactId);
 
-        $newContacts[] = buildContactResponse($contactId, $contact, $index, 'New');
+        $newContacts[] = buildContactResponse($contactId, $contact, $rowNumber, 'New');
         $contactSuccess = true;
 
         // Add to cache to prevent duplicates in same import
@@ -366,7 +383,7 @@ try {
 
       // Collect contribution data for bulk save ONLY if contact was successfully created/updated
       if ($contactSuccess && $contribution && $contactId) {
-        error_log("[IMPORTING] Row " . ($index + 1) . ": Queuing contribution - Amount: " . $contribution['total_amount'] . ", trxn_id: " . ($contribution['trxn_id'] ?? 'none') . ", date: " . $contribution['receive_date']);
+        error_log("[IMPORTING] Row " . $rowNumber . ": Queuing contribution - Amount: " . $contribution['total_amount'] . ", trxn_id: " . ($contribution['trxn_id'] ?? 'none') . ", date: " . $contribution['receive_date']);
         $contributionRecords[] = [
           'contact_id' => $contactId,
           'total_amount' => $contribution['total_amount'],
@@ -391,7 +408,7 @@ try {
         // Store reference for mapping contribution IDs back later
         $contactContributionMap[] = [
           'contact_id' => $contactId,
-          'row' => $index + 1,
+          'row' => $rowNumber,
           'name' => $contact['name'],
           'financial_type' => $contribution['financial_type'],
           'total_amount' => $contribution['total_amount'],
@@ -408,9 +425,9 @@ try {
       }
 
     } catch (\Throwable $e) {
-      error_log("[IMPORTING] Row " . ($index + 1) . ": Contact failed (" . get_class($e) . "): " . $e->getMessage());
+      error_log("[IMPORTING] Row " . $rowNumber . ": Contact failed (" . get_class($e) . "): " . $e->getMessage());
       // Build full contact response
-      $contactResponse = buildContactResponse(null, $contact, $index, 'Error');
+      $contactResponse = buildContactResponse(null, $contact, $rowNumber, 'Error');
 
       // Build contribution response if contribution exists
       $contributionResponse = null;
@@ -443,9 +460,9 @@ try {
       $errors[] = [
         'contact' => $contactResponse,
         'field' => 'general',
-        'message' => 'Contact Import failed at row ' . ($index + 1) . ': ' . $e->getMessage() . '. Contribution is not imported for this contact.'
+        'message' => 'Contact Import failed at row ' . $rowNumber . ': ' . $e->getMessage() . '. Contribution is not imported for this contact.'
       ];
-      error_log("[IMPORTING] Contact Import failed at row " . ($index + 1) . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
+      error_log("[IMPORTING] Contact Import failed at row " . $rowNumber . ": " . $e->getMessage() . ". Contribution is not imported for this contact.");
       $contactSuccess = false;
       continue;
     }
@@ -780,7 +797,7 @@ function resolveContactSubtype($contactType, array $candidates)
   }
   return $candidates[0];
 }
-function buildContactResponse($contactId, $contact, $index, $label)
+function buildContactResponse($contactId, $contact, $rowNumber, $label)
 {
   return [
     'contact_id' => $contactId,
@@ -795,7 +812,7 @@ function buildContactResponse($contactId, $contact, $index, $label)
     'street_address' => $contact['street_address'] ?? "",
     'unit_floor_number' => $contact['unit_floor_number'] ?? "",
     'postal_code' => $contact['postal_code'] ?? "",
-    'row' => $index + 1
+    'row' => $rowNumber
   ];
 }
 ?>

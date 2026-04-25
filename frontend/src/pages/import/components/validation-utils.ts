@@ -427,7 +427,7 @@ export class ContactValidator {
         }
       }
 
-      return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${year}`;
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
 
     // ISO date YYYY-MM-DD
@@ -437,7 +437,7 @@ export class ContactValidator {
       if (!this.isValidDateParts(parseInt(day, 10), parseInt(month, 10), parseInt(year, 10))) {
         return '';
       }
-      return `${day}/${month}/${year}`;
+      return `${year}-${month}-${day}`;
     }
 
     // ISO datetime YYYY-MM-DDTHH:MM:SS with optional timezone
@@ -451,9 +451,7 @@ export class ContactValidator {
       if (!this.isValidTimeParts(hour, parseInt(minute, 10), null, undefined)) {
         return '';
       }
-      const period = hour >= 12 ? 'PM' : 'AM';
-      const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
-      return `${day}/${month}/${year} ${String(twelveHour).padStart(2, '0')}:${minute} ${period}`;
+      return `${year}-${month}-${day}`;
     }
 
     return ''; // invalid format

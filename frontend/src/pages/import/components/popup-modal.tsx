@@ -1,6 +1,6 @@
 import { Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Dialog, DialogTitle, DialogContent, DialogContentText } from '@mui/material';
 import { modalData } from './total-records-card';
-import { ImportContact, ValidationError } from '../../../proxy/contact/import/types';
+import { ImportContact, ImportedContactResult, ImportedContributionResult, ImportProcessError } from '../../../proxy/contact/import/types';
 
 // prop
 interface PopUpModalProps {
@@ -66,7 +66,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
       return items.some(item => item.contact.contribution?.['Additional_Contribution_Details.Received_Date']);
     }
     if (popUpContent.type === 'contributions') {
-      const contributions = popUpContent.data as any[];
+      const contributions = popUpContent.data as ImportedContributionResult[];
       return contributions.some(c => c.received_date);
     }
     return false;
@@ -175,7 +175,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
   };
 
   const renderImportedContactsTable = () => {
-    const contacts = popUpContent.data as ImportContact[];
+    const contacts = popUpContent.data as ImportedContactResult[];
     console.log("contacts", contacts);
     
     return (
@@ -216,7 +216,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
   };
 
   const renderImportedContributionsTable = () => {
-    const contributions = popUpContent.data as any[];
+    const contributions = popUpContent.data as ImportedContributionResult[];
     
     return (
       <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
@@ -265,7 +265,7 @@ export default function PopUpModal({ popUpContent, open, handleClose }: PopUpMod
   };
 
   const renderImportErrorRecordsTable = () => {    
-    const importErrors = popUpContent.data as Array<{ contact?: ImportContact; errors?: ValidationError[]; message?: string }>;
+    const importErrors = popUpContent.data as ImportProcessError[];
     console.log("importErrors: ", importErrors);
     
     if (!Array.isArray(importErrors) || importErrors.length === 0) {

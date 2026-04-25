@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Paper, Typography, Divider, Box } from '@mui/material';
-import { ImportSummary, ImportResults, ImportContact, ValidationError, Contribution } from '../../../proxy/contact/import/types';
+import { ImportSummary, ImportResults, ImportContact, ValidationError, Contribution, ImportedContactResult, ImportedContributionResult, ImportProcessError } from '../../../proxy/contact/import/types';
 import PopUpModal from './popup-modal';
 
 interface TotalRecordsCardProps {
@@ -21,7 +21,7 @@ export interface tabularData {
 export interface modalData {
   type: 'valid' | 'invalid' | 'total' | 'contacts' | 'contributions' | 'error';
   title: string;
-  data: ImportContact[] | Array<{ contact: ImportContact; errors: ValidationError[] }> | Array<{ contact: ImportContact; errors: ValidationError }> | Array<{ contact: ImportContact; row: number; field: string; message: string }> | Contribution[];
+  data: ImportContact[] | Array<{ contact: ImportContact; errors: ValidationError[] }> | ImportedContactResult[] | ImportedContributionResult[] | ImportProcessError[] | Contribution[];
 } 
 
 function MetricCard({ value, label, colorClass, onClick }: { value: number; label: string; colorClass: string; onClick: () => void; }) {
