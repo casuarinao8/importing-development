@@ -193,6 +193,18 @@ try {
     $contribution = $contact['contribution'] ?? null;
     $contactSuccess = false;
 
+    if ($contribution && ($contact['import_template'] ?? '') === 'MINDS') {
+      $mindsValidationErrors = validateMindsContribution($contribution);
+      if (!empty($mindsValidationErrors)) {
+        $errors[] = [
+          'row' => $index + 2,
+          'field' => 'minds_template',
+          'message' => 'MINDS validation failed at row ' . ($index + 2) . ': ' . implode('; ', $mindsValidationErrors)
+        ];
+        continue;
+      }
+    }
+
     try {
       $existingContact = findExistingContact($contact, $contribution, $existingContactsMap, $taxDeductibleFinancialTypeId);
       $contactId = null;
@@ -355,7 +367,9 @@ try {
       // Collect contribution data for bulk save ONLY if contact was successfully created/updated
       if ($contactSuccess && $contribution && $contactId) {
         error_log("[IMPORTING] Row " . ($index + 1) . ": Queuing contribution - Amount: " . $contribution['total_amount'] . ", trxn_id: " . ($contribution['trxn_id'] ?? 'none') . ", date: " . $contribution['receive_date']);
-        $contributionRecords[] = [
+        $mindsContributionApiValues = buildMindsContributionApiValues($contribution);
+
+        $contributionRecords[] = array_merge([
           'contact_id' => $contactId,
           'total_amount' => $contribution['total_amount'],
           'financial_type_id' => $contribution['financial_type_id'],
@@ -372,9 +386,11 @@ try {
           'Additional_Contribution_Details.Payment_Platform' => $contribution['Additional_Contribution_Details.Payment_Platform'],
           'Additional_Contribution_Details.Recurring_Donation' => $contribution['Additional_Contribution_Details.Recurring_Donation'],
           'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'],
+'Additional_Contribution_Details.Transaction_date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? ''
+        ], $mindsContributionApiValues, [
           'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? '',
           'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? null
-        ];
+        ]);
 
         // Store reference for mapping contribution IDs back later
         $contactContributionMap[] = [
@@ -391,7 +407,18 @@ try {
           'frequency' => $contribution['Additional_Contribution_Details.Recurring_Donation'],
           'remarks' => $contribution['Additional_Contribution_Details.Remarks'],
           'imported_date' => $contribution['Additional_Contribution_Details.Imported_Date'],
-          'received_date' => $contribution['Additional_Contribution_Details.Received_Date']
+          'received_date' => $contribution['Additional_Contribution_Details.Received_Date'],
+          'subsidiary' => $contribution['Additional_Contribution_Details.Subsidiary'] ?? '',
+          'donation_bank_account' => getContributionValueByKeys($contribution, [
+            'Additional_Contribution_Details.Donation_Bank_Account',
+            'Additional_Contribution_Details.Bank_Account'
+          ]),
+          'department' => $contribution['Additional_Contribution_Details.Department'] ?? '',
+          'resources' => $contribution['Additional_Contribution_Details.Resources'] ?? '',
+          'projects' => $contribution['Additional_Contribution_Details.Projects'] ?? '',
+          'account_code' => $contribution['Additional_Contribution_Details.Account_Code'] ?? '',
+          'transaction_date_bank_in_date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? '',
+          'bank_reference_no' => $contribution['Additional_Contribution_Details.Bank_Reference_No'] ?? ''
         ];
       }
 
@@ -420,6 +447,17 @@ try {
           'Additional_Contribution_Details.Payment_Platform' => $contribution['Additional_Contribution_Details.Payment_Platform'] ?? "",
           'Additional_Contribution_Details.Recurring_Donation' => $contribution['Additional_Contribution_Details.Recurring_Donation'] ?? "",
           'Additional_Contribution_Details.Remarks' => $contribution['Additional_Contribution_Details.Remarks'] ?? "",
+          'Additional_Contribution_Details.Subsidiary' => $contribution['Additional_Contribution_Details.Subsidiary'] ?? "",
+          'Additional_Contribution_Details.Donation_Bank_Account' => getContributionValueByKeys($contribution, [
+            'Additional_Contribution_Details.Donation_Bank_Account',
+            'Additional_Contribution_Details.Bank_Account'
+          ]),
+          'Additional_Contribution_Details.Department' => $contribution['Additional_Contribution_Details.Department'] ?? "",
+          'Additional_Contribution_Details.Resources' => $contribution['Additional_Contribution_Details.Resources'] ?? "",
+          'Additional_Contribution_Details.Projects' => $contribution['Additional_Contribution_Details.Projects'] ?? "",
+          'Additional_Contribution_Details.Account_Code' => $contribution['Additional_Contribution_Details.Account_Code'] ?? "",
+          'Additional_Contribution_Details.Transaction_Date_Bank_In_Date' => $contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ?? '',
+          'Additional_Contribution_Details.Bank_Reference_No' => $contribution['Additional_Contribution_Details.Bank_Reference_No'] ?? "",
           'Donation_In_Kind_Additional_Details.Items_donated' => $contribution['Donation_In_Kind_Additional_Details.Items_donated'] ?? "",
           'Donation_In_Kind_Additional_Details.Quantity' => $contribution['Donation_In_Kind_Additional_Details.Quantity'] ?? ""
         ];
@@ -469,7 +507,15 @@ try {
           'frequency' => $contactContributionMap[$idx]['frequency'],
           'remarks' => $contactContributionMap[$idx]['remarks'],
           'imported_date' => $contactContributionMap[$idx]['imported_date'],
-          'received_date' => $contactContributionMap[$idx]['received_date']
+          'received_date' => $contactContributionMap[$idx]['received_date'],
+          'department' => $contactContributionMap[$idx]['department'],
+          'resources' => $contactContributionMap[$idx]['resources'],
+          'projects' => $contactContributionMap[$idx]['projects'],
+          'account_code' => $contactContributionMap[$idx]['account_code'],
+          'subsidiary' => $contactContributionMap[$idx]['subsidiary'],
+          'donation_bank_account' => $contactContributionMap[$idx]['donation_bank_account'],
+          'transaction_date_bank_in_date' => $contactContributionMap[$idx]['transaction_date_bank_in_date'],
+          'bank_reference_no' => $contactContributionMap[$idx]['bank_reference_no']
         ];
 
         // Link contribution to contact records
@@ -679,6 +725,257 @@ function resolveContactSubtype($contactType, array $candidates)
   }
   return $candidates[0];
 }
+function validateMindsContribution($contribution)
+{
+  $mindsKeys = [
+    ['Additional_Contribution_Details.Subsidiary'],
+    ['Additional_Contribution_Details.Donation_Bank_Account', 'Additional_Contribution_Details.Bank_Account'],
+    ['Additional_Contribution_Details.Department'],
+    ['Additional_Contribution_Details.Resources'],
+    ['Additional_Contribution_Details.Projects'],
+    ['Additional_Contribution_Details.Account_Code'],
+    ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'],
+    ['Additional_Contribution_Details.Bank_Reference_No']
+  ];
+
+  $hasMindsData = false;
+  foreach ($mindsKeys as $keys) {
+    if (!empty(trim((string)getContributionValueByKeys($contribution, $keys)))) {
+      $hasMindsData = true;
+      break;
+    }
+  }
+
+  if (!$hasMindsData) {
+    return [];
+  }
+
+  $errors = [];
+
+  $requiredFields = [
+    [
+      'keys' => ['Additional_Contribution_Details.Subsidiary'],
+      'label' => 'Subsidiary'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Donation_Bank_Account', 'Additional_Contribution_Details.Bank_Account'],
+      'label' => 'Bank Account'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Department'],
+      'label' => 'Department'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Resources'],
+      'label' => 'Resources'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Projects'],
+      'label' => 'Projects'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Account_Code'],
+      'label' => 'Account Code'
+    ],
+    [
+      'keys' => ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'],
+      'label' => 'Transaction date / Bank-in Date'
+    ]
+  ];
+
+  foreach ($requiredFields as $requiredField) {
+    if (empty(trim((string)getContributionValueByKeys($contribution, $requiredField['keys'])))) {
+      $errors[] = $requiredField['label'] . ' is required for MINDS template rows';
+    }
+  }
+
+  return $errors;
+}
+
+function getContributionValueByKeys(array $contribution, array $keys)
+{
+  $firstMatchedValue = '';
+  $hasMatched = false;
+
+  foreach ($keys as $key) {
+    if (!array_key_exists($key, $contribution)) {
+      continue;
+    }
+
+    $value = $contribution[$key];
+    if (!$hasMatched) {
+      $firstMatchedValue = $value;
+      $hasMatched = true;
+    }
+
+    if (!empty(trim((string)$value))) {
+      return $value;
+    }
+  }
+
+  return $hasMatched ? $firstMatchedValue : '';
+}
+
+function getAdditionalContributionFieldMetadata()
+{
+  static $fieldMetadata = null;
+  if ($fieldMetadata !== null) {
+    return $fieldMetadata;
+  }
+
+  $fieldMetadata = [];
+  try {
+    $fields = \Civi\Api4\CustomField::get(FALSE)
+      ->addSelect('id', 'name', 'html_type', 'option_group_id')
+      ->addWhere('custom_group_id:name', '=', 'Additional_Contribution_Details')
+      ->execute();
+
+    foreach ($fields as $field) {
+      $apiFieldKey = 'Additional_Contribution_Details.' . $field['name'];
+      $fieldMetadata[$apiFieldKey] = [
+        'html_type' => $field['html_type'] ?? null,
+        'option_group_id' => $field['option_group_id'] ?? null
+      ];
+      // Also index by custom_<id> for reliable fallback resolution
+      $customIdKey = 'custom_' . $field['id'];
+      $fieldMetadata[$customIdKey] = [
+        'html_type' => $field['html_type'] ?? null,
+        'option_group_id' => $field['option_group_id'] ?? null
+      ];
+    }
+  } catch (\Throwable $e) {
+    error_log('[IMPORTING] Unable to load Additional_Contribution_Details metadata: ' . $e->getMessage());
+  }
+
+  return $fieldMetadata;
+}
+
+function getOptionValuesByGroupId($groupId)
+{
+  static $optionCacheByGroupId = [];
+
+  if (empty($groupId)) {
+    return [];
+  }
+
+  if (isset($optionCacheByGroupId[$groupId])) {
+    return $optionCacheByGroupId[$groupId];
+  }
+
+  try {
+    $optionValues = \Civi\Api4\OptionValue::get(FALSE)
+      ->addSelect('value', 'label', 'name')
+      ->addWhere('option_group_id', '=', $groupId)
+      ->execute();
+
+    $optionCacheByGroupId[$groupId] = iterator_to_array($optionValues);
+  } catch (\Throwable $e) {
+    error_log('[IMPORTING] Unable to load option values for group ' . $groupId . ': ' . $e->getMessage());
+    $optionCacheByGroupId[$groupId] = [];
+  }
+
+  return $optionCacheByGroupId[$groupId];
+}
+
+function normalizeContributionCustomFieldValue($rawValue, $fieldMeta)
+{
+  if ($rawValue === null) {
+    return '';
+  }
+
+  $rawValueString = trim((string)$rawValue);
+  if ($rawValueString === '') {
+    return '';
+  }
+
+  if (
+    empty($fieldMeta) ||
+    empty($fieldMeta['html_type']) ||
+    empty($fieldMeta['option_group_id']) ||
+    !in_array($fieldMeta['html_type'], ['Select', 'Radio'], true)
+  ) {
+    return $rawValue;
+  }
+
+  $optionValues = getOptionValuesByGroupId($fieldMeta['option_group_id']);
+  foreach ($optionValues as $optionValue) {
+    $value = (string)($optionValue['value'] ?? '');
+    $label = trim((string)($optionValue['label'] ?? ''));
+    $name = trim((string)($optionValue['name'] ?? ''));
+
+    if ($rawValueString === $value) {
+      return $optionValue['value'];
+    }
+    if ($label !== '' && strcasecmp($rawValueString, $label) === 0) {
+      return $optionValue['value'];
+    }
+    if ($name !== '' && strcasecmp($rawValueString, $name) === 0) {
+      return $optionValue['value'];
+    }
+  }
+
+  return $rawValue;
+}
+
+function resolveExistingApiFieldKey(array $candidates, array $fieldMetadata)
+{
+  foreach ($candidates as $candidate) {
+    if (isset($fieldMetadata[$candidate])) {
+      return $candidate;
+    }
+  }
+  return $candidates[0];
+}
+
+function buildMindsContributionApiValues(array $contribution)
+{
+  $fieldMetadata = getAdditionalContributionFieldMetadata();
+
+  $fieldMappings = [
+    [
+      'input_keys' => ['Additional_Contribution_Details.Subsidiary'],
+      'api_candidates' => ['Additional_Contribution_Details.Subsidiary']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Donation_Bank_Account', 'Additional_Contribution_Details.Bank_Account'],
+      'api_candidates' => ['Additional_Contribution_Details.Bank_Account', 'Additional_Contribution_Details.Donation_Bank_Account']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Department'],
+      'api_candidates' => ['Additional_Contribution_Details.Department']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Resources'],
+      'api_candidates' => ['Additional_Contribution_Details.Resources']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Projects'],
+      'api_candidates' => ['Additional_Contribution_Details.Projects']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Account_Code'],
+      'api_candidates' => ['Additional_Contribution_Details.Account_Code']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date'],
+      'api_candidates' => ['Additional_Contribution_Details.Transaction_date', 'Additional_Contribution_Details.Transaction_Date_Bank_In_Date', 'Additional_Contribution_Details.Transaction_ID_Bank_In_Date', 'custom_564']
+    ],
+    [
+      'input_keys' => ['Additional_Contribution_Details.Bank_Reference_No'],
+      'api_candidates' => ['Additional_Contribution_Details.Bank_Reference_No']
+    ]
+  ];
+
+  $apiValues = [];
+  foreach ($fieldMappings as $fieldMapping) {
+    $apiFieldKey = resolveExistingApiFieldKey($fieldMapping['api_candidates'], $fieldMetadata);
+    $rawValue = getContributionValueByKeys($contribution, $fieldMapping['input_keys']);
+    $apiValues[$apiFieldKey] = normalizeContributionCustomFieldValue($rawValue, $fieldMetadata[$apiFieldKey] ?? null);
+  }
+
+  return $apiValues;
+}
+
 function buildContactResponse($contactId, $contact, $index, $label)
 {
   return [

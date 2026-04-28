@@ -11,7 +11,6 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import twConfig from '../tailwind.config';
 import NotFound from './pages/not-found';
 import DataImport from './pages/import/';
-import Settings from './pages/import/settings';
 import ErrorReports from './pages/import/error-reports';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -39,7 +38,6 @@ createRoot(document.getElementById('root')!).render(
                 <Route path='*' element={<NotFound />} />
                 <Route path='/' index element={<Root />} />
                 <Route path='/import' element={<DataImport />} />
-                <Route path='/import/settings' element={<Settings />} />
                 <Route path='/import/error-reports' element={<ErrorReports />} />
               </Routes>
             </HashRouter>

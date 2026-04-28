@@ -9,7 +9,7 @@ import Results from './results';
 import { downloadCSV } from '../../utils/downloadCSV';
 import { ImportContact, ImportSummary, ImportResults, ValidationError, APIImportErrorReportError } from '../../proxy/contact/import/types';
 import { Button } from '@mui/material';
-import { Description, Settings, History } from '@mui/icons-material';
+import { Description, History } from '@mui/icons-material';
 import { ContactValidator } from './components/validation-utils';
 import Progress from './components/progress';
 import Papa from 'papaparse';
@@ -297,6 +297,20 @@ export default function DataImport() {
     const hasDisbursementDate = invalidContacts.some(
       item => item.contact.contribution['Additional_Contribution_Details.Received_Date']
     );
+    const hasMindsColumns = invalidContacts.some(item => {
+      const contribution = item.contact.contribution;
+      return Boolean(
+        item.contact.import_template === 'MINDS' ||
+        contribution['Additional_Contribution_Details.Subsidiary'] ||
+        contribution['Additional_Contribution_Details.Donation_Bank_Account'] ||
+        contribution['Additional_Contribution_Details.Department'] ||
+        contribution['Additional_Contribution_Details.Resources'] ||
+        contribution['Additional_Contribution_Details.Projects'] ||
+        contribution['Additional_Contribution_Details.Account_Code'] ||
+        contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'] ||
+        contribution['Additional_Contribution_Details.Bank_Reference_No']
+      );
+    });
 
     // Create error CSV content
     const data = invalidContacts.map((item, index) => ({
@@ -327,6 +341,16 @@ export default function DataImport() {
       'Items Donated (for DIK)': item.contact.contribution['Donation_In_Kind_Additional_Details.Items_donated'],
       'Quantity': item.contact.contribution['Donation_In_Kind_Additional_Details.Quantity'],
       'Imported Date': item.contact.contribution['Additional_Contribution_Details.Imported_Date'],
+      ...(hasMindsColumns && {
+        'Subsidiary': item.contact.contribution['Additional_Contribution_Details.Subsidiary'],
+        'Bank Account': item.contact.contribution['Additional_Contribution_Details.Donation_Bank_Account'],
+        'Department': item.contact.contribution['Additional_Contribution_Details.Department'],
+        'Resources': item.contact.contribution['Additional_Contribution_Details.Resources'],
+        'Projects': item.contact.contribution['Additional_Contribution_Details.Projects'],
+        'Account Code': item.contact.contribution['Additional_Contribution_Details.Account_Code'],
+        'Transaction date / Bank-in Date': item.contact.contribution['Additional_Contribution_Details.Transaction_Date_Bank_In_Date'],
+        'Bank Reference No': item.contact.contribution['Additional_Contribution_Details.Bank_Reference_No'],
+      }),
       ...(hasDisbursementDate && {
         'Disbursement Batch Date': item.contact.contribution['Additional_Contribution_Details.Received_Date'],
       }),
@@ -404,10 +428,7 @@ export default function DataImport() {
       case 'upload':
         return <>
           <div className='my-4 flex justify-between'>
-            <div className='flex gap-2'>
-              <ActionButton actionName='Import Settings' iconName={<Settings />} onClick={() => navigate('/import/settings')} />
-              <ActionButton actionName='Saved Error Reports' iconName={<History />} variant='outlined' onClick={() => navigate('/import/error-reports')} />
-            </div>
+            <ActionButton actionName='Saved Error Reports' iconName={<History />} variant='outlined' onClick={() => navigate('/import/error-reports')} />
             <ActionButton actionName='Download Template' iconName={<Description />} onClick={handleDownloadTemplate} />
           </div>
             <UploadCSV onUpload={handleUpload} setContinueButton={setContinueButton} />

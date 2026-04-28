@@ -2,7 +2,27 @@ import { Proxy } from "../../../proxy";
 import { ImportContact, ValidationError, ValidationResult, ImportSummary } from "../../../proxy/contact/import/types";
 
 export class ContactValidator {
-  static validateContact(contact: ImportContact, rowIndex: number, existingTransactionIds: { id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]): ValidationResult {
+  private static readonly MINDS_HEADERS = [
+    'subsidiary',
+    'contact primary subsidiary',
+    'donation subsidiary',
+    'donation bank account',
+    'bank account',
+    'department',
+    'resources',
+    'projects',
+    'account code',
+    'transaction date / bank in date',
+    'transaction id / bank in date',
+    'transaction id/bank in date',
+    'bank reference no',
+  ];
+
+  static validateContact(
+    contact: ImportContact,
+    rowIndex: number,
+    existingTransactionIds: { id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]
+  ): ValidationResult {
     const errors: ValidationError[] = [];
     const contribution = contact.contribution;
 
@@ -173,6 +193,23 @@ export class ContactValidator {
       } else contribution["Additional_Contribution_Details.Received_Date"] = dateValue;
     }
 
+    // Change Transaction Date / Bank-in Date format
+    let transaction_date_bank_in_date = contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"];
+    if (transaction_date_bank_in_date) {
+      let dateValue = this.convertToISO(transaction_date_bank_in_date);
+      if (dateValue === '') {
+        errors.push({
+          row: rowIndex,
+          field: 'transaction_date_bank_in_date',
+          message: 'Transaction date / Bank-in date format is invalid'
+        });
+      } else contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"] = dateValue;
+    }
+
+    if (contact.import_template === 'MINDS') {
+      this.validateMindsContribution(contribution as Record<string, any>, rowIndex, errors);
+    }
+
     return {
       isValid: errors.length === 0,
       errors
@@ -223,8 +260,13 @@ export class ContactValidator {
   }
 
   private static convertToISO(dateStr: string): string {
+    const trimmed = dateStr.trim();
+    // Already ISO (yyyy-mm-dd) – pass through
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
     // d/m/yyyy or dd/mm/yyyy with optional time (stripped)
-    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(dateStr.trim());
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM))?)?$/i.exec(trimmed);
     if (!match) return ''; // invalid format
 
     const [_, dd, mm, yyyy] = match;
@@ -247,7 +289,9 @@ export class ContactValidator {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const headers = this.parseCSVLine(lines[0]).map(h => this.normalizeHeader(h));
+    const mindsMatchCount = headers.filter(header => this.MINDS_HEADERS.includes(header)).length;
+    const isMindsTemplate = mindsMatchCount >= 5;
     const contacts: ImportContact[] = [];
 
     for (let i = 1; i < lines.length; i++) {
@@ -255,6 +299,7 @@ export class ContactValidator {
       if (values.length !== headers.length) continue;
 
       const contact: ImportContact = {
+        import_template: isMindsTemplate ? 'MINDS' : 'STANDARD',
         contact_type: '',
         prefix_id: null,
         name: '',
@@ -282,6 +327,14 @@ export class ContactValidator {
           "Additional_Contribution_Details.Remarks": '',
           "Additional_Contribution_Details.Imported_Date": '',
           "Additional_Contribution_Details.Received_Date": '',
+          "Additional_Contribution_Details.Subsidiary": '',
+          "Additional_Contribution_Details.Donation_Bank_Account": '',
+          "Additional_Contribution_Details.Department": '',
+          "Additional_Contribution_Details.Resources": '',
+          "Additional_Contribution_Details.Projects": '',
+          "Additional_Contribution_Details.Account_Code": '',
+          "Additional_Contribution_Details.Transaction_Date_Bank_In_Date": '',
+          "Additional_Contribution_Details.Bank_Reference_No": '',
           "Donation_In_Kind_Additional_Details.Items_donated": '',
           "Donation_In_Kind_Additional_Details.Quantity": null
         }
@@ -314,8 +367,8 @@ export class ContactValidator {
           case 'external id':
           case 'external_id':
           case 'external_identifier':
-            contact.external_identifier = value;
-            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = value;
+            contact.external_identifier = value.toUpperCase();
+            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = value.toUpperCase();
             break;
           case 'email':
             contact.email_primary = value;
@@ -423,6 +476,38 @@ export class ContactValidator {
           case 'remarks':
             contact.contribution["Additional_Contribution_Details.Remarks"] = value;
             break;
+          case 'subsidiary':
+          case 'contact primary subsidiary':
+          case 'donation subsidiary':
+            if (value && !contact.contribution["Additional_Contribution_Details.Subsidiary"]) {
+              contact.contribution["Additional_Contribution_Details.Subsidiary"] = value;
+            }
+            break;
+          case 'donation bank account':
+          case 'bank account':
+            contact.contribution["Additional_Contribution_Details.Donation_Bank_Account"] = value;
+            break;
+          case 'department':
+            contact.contribution["Additional_Contribution_Details.Department"] = value;
+            break;
+          case 'resources':
+            contact.contribution["Additional_Contribution_Details.Resources"] = value;
+            break;
+          case 'projects':
+            contact.contribution["Additional_Contribution_Details.Projects"] = value;
+            break;
+          case 'account code':
+            contact.contribution["Additional_Contribution_Details.Account_Code"] = value;
+            break;
+          case 'transaction date / bank in date':
+          case 'transaction id / bank in date':
+          case 'transaction id/bank in date':
+            contact.contribution["Additional_Contribution_Details.Transaction_Date_Bank_In_Date"] = value;
+            break;
+          case 'bank reference no':
+          case 'bank reference no.':
+            contact.contribution["Additional_Contribution_Details.Bank_Reference_No"] = value;
+            break;
           case 'items donated (for dik)':
           case 'items donated':
           case 'items_donated':
@@ -439,10 +524,52 @@ export class ContactValidator {
         }
       });
 
+      if (contact.import_template === 'MINDS' && !contact.contribution["Additional_Contribution_Details.Subsidiary"]) {
+        contact.contribution["Additional_Contribution_Details.Subsidiary"] = 'MINDSG';
+      }
+
       contacts.push(contact);
     }
 
     return contacts;
+  }
+
+  private static normalizeHeader(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[_\-]+/g, ' ')
+      .replace(/\s+/g, ' ');
+  }
+
+  private static validateMindsContribution(
+    contribution: Record<string, any>,
+    rowIndex: number,
+    errors: ValidationError[]
+  ) {
+    if (!String(contribution['Additional_Contribution_Details.Subsidiary'] ?? '').trim()) {
+      contribution['Additional_Contribution_Details.Subsidiary'] = 'MINDSG';
+    }
+
+    const requiredMindsFields: Array<{ key: string; label: string }> = [
+      { key: 'Additional_Contribution_Details.Subsidiary', label: 'Subsidiary' },
+      { key: 'Additional_Contribution_Details.Donation_Bank_Account', label: 'Bank Account' },
+      { key: 'Additional_Contribution_Details.Department', label: 'Department' },
+      { key: 'Additional_Contribution_Details.Resources', label: 'Resources' },
+      { key: 'Additional_Contribution_Details.Projects', label: 'Projects' },
+      { key: 'Additional_Contribution_Details.Account_Code', label: 'Account Code' },
+      { key: 'Additional_Contribution_Details.Transaction_Date_Bank_In_Date', label: 'Transaction date / Bank-in Date' },
+    ];
+
+    requiredMindsFields.forEach(field => {
+      if (!String(contribution[field.key] ?? '').trim()) {
+        errors.push({
+          row: rowIndex,
+          field: field.key,
+          message: `${field.label} is required for MINDS template rows`
+        });
+      }
+    });
   }
 
   private static parseCSVLine(line: string): string[] {

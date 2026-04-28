@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APIImportSettings, APISettings, APISaveValidationErrorReportPayload } from './types';
+import { ImportContact, ImportResults, ValidationError, APIImportErrorReport, APIImportErrorReportListItem, APISaveValidationErrorReportPayload } from './types';
 import { config } from '../../../utils/config';
 
 export default class ImportManager {
@@ -33,22 +33,6 @@ export default class ImportManager {
 			`${this.route}/get_duplicate_transaction_ids.php`,
 			{ transactionIds }
 		);
-		return response.data;
-	}
-
-  static async getImportSettings() {
-		const response = await axios.get<APISettings[]>(`${this.route}/get_import_settings.php`);
-		return response.data;
-	}
-
-  static async setImportSettings(settings: APIImportSettings) {
-		const response = await axios.create({
-      headers: { 'Content-Type': 'application/json' }
-    }).post<{ settings: APIImportSettings}>(
-      `${this.route}/set_import_settings.php`,
-      { settings }
-    );
-
 		return response.data;
 	}
 
