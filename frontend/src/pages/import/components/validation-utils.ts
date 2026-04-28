@@ -367,8 +367,8 @@ export class ContactValidator {
           case 'external id':
           case 'external_id':
           case 'external_identifier':
-            contact.external_identifier = value;
-            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = value;
+            contact.external_identifier = value.toUpperCase();
+            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = value.toUpperCase();
             break;
           case 'email':
             contact.email_primary = value;

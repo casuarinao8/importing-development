@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { APIContact } from '../../proxy/contact/types';
 import { Proxy } from '../../proxy';
 import UploadCSV from './upload-csv';
@@ -9,7 +8,7 @@ import Results from './results';
 import { downloadCSV } from '../../utils/downloadCSV';
 import { ImportContact, ImportSummary, ImportResults, ValidationError } from '../../proxy/contact/import/types';
 import { Button } from '@mui/material';
-import { Description, Settings } from '@mui/icons-material';
+import { Description } from '@mui/icons-material';
 import { ContactValidator } from './components/validation-utils';
 import Progress from './components/progress';
 import Papa from 'papaparse';
@@ -19,7 +18,6 @@ import { config } from '../../utils/config';
 type ImportStep = 'upload' | 'preview' | 'progress' | 'results';
 
 export default function DataImport() {
-  const navigate = useNavigate();
   const [contact, setContact] = useState<APIContact>();
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
   const [contacts, setContacts] = useState<ImportContact[]>([]);
@@ -355,8 +353,7 @@ export default function DataImport() {
     switch (currentStep) {
       case 'upload':
         return <>
-          <div className='my-4 flex justify-between'>
-            <ActionButton actionName='Import Settings' iconName={<Settings />} onClick={() => navigate('/import/settings')} />
+          <div className='my-4 flex justify-end'>
             <ActionButton actionName='Download Template' iconName={<Description />} onClick={handleDownloadTemplate} />
           </div>
             <UploadCSV onUpload={handleUpload} setContinueButton={setContinueButton} />

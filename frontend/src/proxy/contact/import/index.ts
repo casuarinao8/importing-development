@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ImportContact, ImportResults, ValidationError, APIImportSettings, APISettings } from './types';
+import { ImportContact, ImportResults, ValidationError } from './types';
 import { config } from '../../../utils/config';
 
 export default class ImportManager {
@@ -28,11 +28,6 @@ export default class ImportManager {
     return results;
   }
 
-  static async getSettingByName(name: string) {
-		const response = await axios.get<APISettings>(`${this.route}/get_setting_by_name.php?name=${name}`);
-		return response.data;
-	}
-
   static async getDuplicateTransactionIds(transactionIds: string[]) {
 		const response = await axios.post<{ id: number; contact_id: number; receive_date: string; trxn_id: string; "Additional_Contribution_Details.Imported_Date": string }[]>(
 			`${this.route}/get_duplicate_transaction_ids.php`,
@@ -41,19 +36,4 @@ export default class ImportManager {
 		return response.data;
 	}
 
-  static async getImportSettings() {
-		const response = await axios.get<APISettings[]>(`${this.route}/get_import_settings.php`);
-		return response.data;
-	}
-
-  static async setImportSettings(settings: APIImportSettings) {
-		const response = await axios.create({
-      headers: { 'Content-Type': 'application/json' }
-    }).post<{ settings: APIImportSettings}>(
-      `${this.route}/set_import_settings.php`,
-      { settings }
-    );
-
-    return response.data;;
-	}
 }

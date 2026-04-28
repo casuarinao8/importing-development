@@ -79,14 +79,4 @@ export interface ImportResults {
   errors: any[];
 }
 
-export interface APISettings {
-  domain_id: number;
-  name: string;
-  value: string | any[];
-}
 
-export interface APIImportSettings {
-  import_dedupe_rule: string;
-  import_contact_types: string[];
-  import_custom_fields: string[];
-}
