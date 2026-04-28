@@ -86,6 +86,9 @@ try {
         ->addWhere('contact_id', '=', '$id')
         ->addSelect('phone'));
 
+    // Normalise phones for matching
+    $phones = array_map('normalisePhone', $phones);
+
     // Build OR conditions for matching
     $orConditions = [];
 
@@ -124,7 +127,7 @@ try {
           'id' => $existing['id'],
           'contact_type' => $existing['contact_type'],
           'emails' => array_map(fn($e) => strtolower($e['email']), $existing['emails']),
-          'phones' => array_map(fn($p) => $p['phone'], $existing['phones'])
+          'phones' => array_map(fn($p) => normalisePhone($p['phone']), $existing['phones'])
         ];
 
         // Index by external_identifier
@@ -174,7 +177,7 @@ try {
 
       // Try phone if email not found
       if (!empty($contact['phone_primary'])) {
-        $key = 'phone_' . $contact['phone_primary'];
+        $key = 'phone_' . normalisePhone($contact['phone_primary']);
         if (isset($existingContactsMap[$key])) {
           return $existingContactsMap[$key];
         }
@@ -214,9 +217,18 @@ try {
         $contactId = $existingContact['id'];
         error_log("[IMPORTING] Row " . ($index + 1) . ": Updating existing contact ID " . $contactId . " - " . $contact['name'] . " (ext_id: " . ($contact['external_identifier'] ?? 'none') . ")");
 
+        // Prevent contact type switch which can corrupt the CRM record
+        if ($existingContact['contact_type'] !== $contact['contact_type']) {
+          $errors[] = [
+            'row' => $index + 1,
+            'field' => 'contact_type',
+            'message' => 'Contact type mismatch for existing contact ID ' . $contactId . ': expected ' . $existingContact['contact_type'] . ' but got ' . $contact['contact_type']
+          ];
+          continue;
+        }
+
         $query = \Civi\Api4\Contact::update(false)
-          ->addWhere('id', '=', $contactId)
-          ->addValue('contact_type', $contact['contact_type']);
+          ->addWhere('id', '=', $contactId);
 
         // name & contact subtype
         $name = $contact['name'];
@@ -253,9 +265,10 @@ try {
         }
 
         // Add phone if new
+        $normalisedIncomingPhone = normalisePhone($contact['phone_primary'] ?? '');
         if (
           !empty($contact['phone_primary']) &&
-          !in_array($contact['phone_primary'], $existingContact['phones'])
+          !in_array($normalisedIncomingPhone, $existingContact['phones'])
         ) {
           $query->addChain('phone', \Civi\Api4\Phone::create(TRUE)
             ->setValues([
@@ -266,7 +279,7 @@ try {
               'phone_type_id' => 2 // mobile
             ]));
           // Update local cache
-          $existingContact['phones'][] = $contact['phone_primary'];
+          $existingContact['phones'][] = $normalisedIncomingPhone;
         }
 
         // Add address
@@ -350,7 +363,7 @@ try {
           'id' => $contactId,
           'contact_type' => $contact['contact_type'],
           'emails' => !empty($contact['email_primary']) ? [strtolower($contact['email_primary'])] : [],
-          'phones' => !empty($contact['phone_primary']) ? [$contact['phone_primary']] : []
+          'phones' => !empty($contact['phone_primary']) ? [normalisePhone($contact['phone_primary'])] : []
         ];
 
         if (!empty($contact['external_identifier'])) {
@@ -360,7 +373,7 @@ try {
           $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
         }
         if (!empty($contact['phone_primary'])) {
-          $existingContactsMap['phone_' . $contact['phone_primary']] = $newContactData;
+          $existingContactsMap['phone_' . normalisePhone($contact['phone_primary'])] = $newContactData;
         }
       }
 
@@ -699,6 +712,11 @@ function normalizeImportErrorEntry($error)
   return $normalized;
 }
 
+
+function normalisePhone($phone)
+{
+  return preg_replace('/\D/', '', (string)$phone);
+}
 
 function resolveContactSubtype($contactType, array $candidates)
 {

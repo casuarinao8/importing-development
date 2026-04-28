@@ -285,6 +285,12 @@ export class ContactValidator {
     return isNaN(num) ? value : num;
   }
 
+  private static normalisePhone(value: string): string {
+    // Strip all non-digit characters for reliable matching, but preserve original if it becomes empty
+    const digitsOnly = value.replace(/\D/g, '');
+    return digitsOnly.length > 0 ? digitsOnly : value.trim();
+  }
+
   static parseCSV(csvText: string): ImportContact[] {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
@@ -367,15 +373,16 @@ export class ContactValidator {
           case 'external id':
           case 'external_id':
           case 'external_identifier':
-            contact.external_identifier = value.toUpperCase();
-            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = value.toUpperCase();
+            const cleanExternal = value.trim().toUpperCase();
+            contact.external_identifier = cleanExternal;
+            contact.contribution["Additional_Contribution_Details.NRIC_FIN_UEN"] = cleanExternal;
             break;
           case 'email':
             contact.email_primary = value;
             break;
           case 'phone':
           case 'mobile number':
-            contact.phone_primary = value;
+            contact.phone_primary = this.normalisePhone(value);
             break;
           case 'street address':
           case 'street_address':
