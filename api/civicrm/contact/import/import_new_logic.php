@@ -359,7 +359,7 @@ try {
         if ($trashed) {
           $trashedId = $trashed['contact']['id'];
           $matchedBy = $trashed['matched_by'];
-          throw new Exception("Contact ID $trashedId with matching $matchedBy exists in trash (deleted but not permanently). Please restore or permanently delete this contact in CiviCRM before importing.");
+          throw new Exception("Contact ID $trashedId with matching $matchedBy exists in trash (deleted but not permanently). Please restore or permanently delete this contact in CiviCRM before importing");
         }
 
         error_log("[IMPORTING] Row " . ($index + 1) . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
