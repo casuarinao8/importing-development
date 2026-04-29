@@ -109,6 +109,9 @@ try {
       $orConditions[] = ['phone_match.phone', 'IN', $phones];
     }
 
+    // Exclude trashed contacts from the active lookup
+    $query->addWhere('is_deleted', '=', 0);
+
     // Apply OR clause if we have any conditions
     if (!empty($orConditions)) {
       if (count($orConditions) === 1) {
@@ -185,6 +188,55 @@ try {
     }
 
     // Non-tax-deductible Organization: no matching, always create new
+    return null;
+  }
+
+  // Check whether a trashed contact already matches the incoming identifiers.
+  // Returns ['contact' => [...], 'matched_by' => 'field: value'] or null.
+  function findTrashedContact($contact, $contribution, $taxDeductibleFinancialTypeId)
+  {
+    $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
+
+    // Tax-deductible: match by external_id
+    if ($isTaxDeductible && !empty($contact['external_identifier'])) {
+      $result = \Civi\Api4\Contact::get(TRUE)
+        ->addSelect('id', 'contact_type', 'external_identifier')
+        ->addWhere('is_deleted', '=', 1)
+        ->addWhere('external_identifier', '=', $contact['external_identifier'])
+        ->execute();
+      if ($result->count() > 0) {
+        return ['contact' => $result->first(), 'matched_by' => 'external identifier ' . $contact['external_identifier']];
+      }
+    }
+
+    // Non-tax-deductible Individual: match by email, then phone
+    if (!$isTaxDeductible && $contact['contact_type'] === 'Individual') {
+      if (!empty($contact['email_primary'])) {
+        $result = \Civi\Api4\Contact::get(TRUE)
+          ->addJoin('Email AS email_match', 'LEFT', ['id', '=', 'email_match.contact_id'])
+          ->addSelect('id', 'contact_type', 'external_identifier')
+          ->addWhere('is_deleted', '=', 1)
+          ->addWhere('email_match.email', '=', strtolower($contact['email_primary']))
+          ->execute();
+        if ($result->count() > 0) {
+          return ['contact' => $result->first(), 'matched_by' => 'email ' . $contact['email_primary']];
+        }
+      }
+
+      if (!empty($contact['phone_primary'])) {
+        $normalisedPhone = normalisePhone($contact['phone_primary']);
+        $result = \Civi\Api4\Contact::get(TRUE)
+          ->addJoin('Phone AS phone_match', 'LEFT', ['id', '=', 'phone_match.contact_id'])
+          ->addSelect('id', 'contact_type', 'external_identifier')
+          ->addWhere('is_deleted', '=', 1)
+          ->addWhere('phone_match.phone', '=', $normalisedPhone)
+          ->execute();
+        if ($result->count() > 0) {
+          return ['contact' => $result->first(), 'matched_by' => 'phone ' . $contact['phone_primary']];
+        }
+      }
+    }
+
     return null;
   }
 
@@ -302,6 +354,14 @@ try {
 
       } else {
         // CREATE NEW CONTACT
+        // First check if a trashed contact with the same identifiers already exists
+        $trashed = findTrashedContact($contact, $contribution, $taxDeductibleFinancialTypeId);
+        if ($trashed) {
+          $trashedId = $trashed['contact']['id'];
+          $matchedBy = $trashed['matched_by'];
+          throw new Exception("Contact ID $trashedId with matching $matchedBy exists in trash (deleted but not permanently). Please restore or permanently delete this contact in CiviCRM before importing.");
+        }
+
         error_log("[IMPORTING] Row " . ($index + 1) . ": Creating new contact - " . $contact['name'] . " (type: " . $contact['contact_type'] . ", ext_id: " . ($contact['external_identifier'] ?? 'none') . ", email: " . ($contact['email_primary'] ?? 'none') . ")");
         $query = \Civi\Api4\Contact::create(false)
           ->addValue('contact_type', $contact['contact_type']);
