@@ -287,8 +287,10 @@ export class ContactValidator {
 
   private static normalisePhone(value: string): string {
     // Remove spaces and punctuation, but keep digits and the leading + sign
-    const cleaned = value.replace(/[^+\d]/g, '');
-    return cleaned.length > 0 ? cleaned : value.trim();
+    const trimmed = value.trim();
+    const hasPlus = trimmed.startsWith('+');
+    const digits = trimmed.replace(/\D/g, '');
+    return digits.length > 0 ? (hasPlus ? '+' + digits : digits) : trimmed;
   }
 
   static parseCSV(csvText: string): ImportContact[] {

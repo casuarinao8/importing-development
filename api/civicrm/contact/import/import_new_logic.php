@@ -715,7 +715,10 @@ function normalizeImportErrorEntry($error)
 
 function normalisePhone($phone)
 {
-  return preg_replace('/[^+\d]/', '', (string)$phone);
+  $phone = trim((string)$phone);
+  $hasPlus = strpos($phone, '+') === 0;
+  $digits = preg_replace('/\D/', '', $phone);
+  return $hasPlus ? '+' . $digits : $digits;
 }
 
 function resolveContactSubtype($contactType, array $candidates)
