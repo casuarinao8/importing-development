@@ -286,9 +286,9 @@ export class ContactValidator {
   }
 
   private static normalisePhone(value: string): string {
-    // Strip all non-digit characters for reliable matching, but preserve original if it becomes empty
-    const digitsOnly = value.replace(/\D/g, '');
-    return digitsOnly.length > 0 ? digitsOnly : value.trim();
+    // Remove spaces and punctuation, but keep digits and the leading + sign
+    const cleaned = value.replace(/[^+\d]/g, '');
+    return cleaned.length > 0 ? cleaned : value.trim();
   }
 
   static parseCSV(csvText: string): ImportContact[] {

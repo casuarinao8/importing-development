@@ -715,7 +715,7 @@ function normalizeImportErrorEntry($error)
 
 function normalisePhone($phone)
 {
-  return preg_replace('/\D/', '', (string)$phone);
+  return preg_replace('/[^+\d]/', '', (string)$phone);
 }
 
 function resolveContactSubtype($contactType, array $candidates)
