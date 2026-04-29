@@ -130,9 +130,9 @@ try {
           'phones' => array_map(fn($p) => normalisePhone($p['phone']), $existing['phones'])
         ];
 
-        // Index by external_identifier
+        // Index by external_identifier (case-insensitive)
         if (!empty($existing['external_identifier'])) {
-          $existingContactsMap['ext_' . $existing['external_identifier']] = $contactData;
+          $existingContactsMap['ext_' . strtoupper($existing['external_identifier'])] = $contactData;
         }
 
         // Index by emails
@@ -159,9 +159,9 @@ try {
   {
     $isTaxDeductible = ($contribution && isset($contribution['financial_type_id']) && $contribution['financial_type_id'] == $taxDeductibleFinancialTypeId);
 
-    // Tax-deductible: match by external_id
+    // Tax-deductible: match by external_id (case-insensitive)
     if ($isTaxDeductible && !empty($contact['external_identifier'])) {
-      $key = 'ext_' . $contact['external_identifier'];
+      $key = 'ext_' . strtoupper($contact['external_identifier']);
       return $existingContactsMap[$key] ?? null;
     }
 
@@ -367,7 +367,7 @@ try {
         ];
 
         if (!empty($contact['external_identifier'])) {
-          $existingContactsMap['ext_' . $contact['external_identifier']] = $newContactData;
+          $existingContactsMap['ext_' . strtoupper($contact['external_identifier'])] = $newContactData;
         }
         if (!empty($contact['email_primary'])) {
           $existingContactsMap['email_' . strtolower($contact['email_primary'])] = $newContactData;
